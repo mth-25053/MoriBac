@@ -1,0 +1,2 @@
+export const IMPORT_CHUNK_SIZE = 1024 * 1024;
+export const DIRECT_UPLOAD_LIMIT = 3 * 1024 * 1024;

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { MappingWizard, canonicalFieldLabel } from "@/components/admin/mapping-wizard";
 import type { AdminDictionary } from "@/lib/admin-i18n";
 import { csrfFromDocument } from "@/lib/csrf-client";
+import { DIRECT_UPLOAD_LIMIT, IMPORT_CHUNK_SIZE } from "@/lib/import-upload-config";
 import { canonicalFields, type CanonicalField, type ColumnMapping, type DetectedColumn } from "@/lib/excel/types";
 import type { Locale } from "@/lib/i18n";
 
@@ -36,26 +37,113 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
   const [report, setReport] = useState<Report | null>(null);
   const [mappingRequest, setMappingRequest] = useState<MappingRequest | null>(null);
   const [loading, setLoading] = useState(false);
+  const uploadRef = useRef<{ file: File; uploadId: string } | null>(null);
 
   function resetResult() {
     setReport(null);
     setMappingRequest(null);
   }
 
+  async function parsedResponse(response: Response) {
+    const text = await response.text();
+    if (!text) return {} as Record<string, unknown>;
+    try {
+      return JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      return {
+        error: response.status === 413 ? "FUNCTION_PAYLOAD_TOO_LARGE" : "INVALID_SERVER_RESPONSE"
+      };
+    }
+  }
+
+  function responseRequestId(data: Record<string, unknown>) {
+    if (typeof data.requestId === "string") return data.requestId;
+    const details = data.details;
+    return details && typeof details === "object" && "requestId" in details && typeof details.requestId === "string"
+      ? details.requestId
+      : null;
+  }
+  async function uploadLargeFile() {
+    if (!file || file.size <= DIRECT_UPLOAD_LIMIT) return null;
+    if (uploadRef.current?.file === file) return uploadRef.current.uploadId;
+    const uploadId = crypto.randomUUID();
+    const totalChunks = Math.ceil(file.size / IMPORT_CHUNK_SIZE);
+
+    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+      const chunk = file.slice(chunkIndex * IMPORT_CHUNK_SIZE, Math.min(file.size, (chunkIndex + 1) * IMPORT_CHUNK_SIZE));
+      let uploaded = false;
+      let lastData: Record<string, unknown> = {};
+      const chunkRequestId = crypto.randomUUID();
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const body = new FormData();
+        body.set("uploadId", uploadId);
+        body.set("fileName", file.name);
+        body.set("mimeType", file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        body.set("fileSize", String(file.size));
+        body.set("totalChunks", String(totalChunks));
+        body.set("chunkIndex", String(chunkIndex));
+        body.set("chunk", chunk, file.name + ".part");
+        try {
+          const response = await fetch("/api/admin/import/upload", {
+            method: "POST",
+            headers: {
+              "x-csrf-token": csrfFromDocument(),
+              "x-request-id": chunkRequestId
+            },
+            body
+          });
+          lastData = await parsedResponse(response);
+          if (response.ok) {
+            uploaded = true;
+            break;
+          }
+          if (response.status < 500 && response.status !== 429) break;
+        } catch {
+          lastData = { error: "SERVICE_UNAVAILABLE" };
+        }
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** (attempt - 1)));
+      }
+      if (!uploaded) {
+        const code = typeof lastData.error === "string" ? lastData.error : "UPLOAD_FAILED";
+        const message = translatedApiError(code, dict, locale);
+        const errorRequestId = responseRequestId(lastData);
+        const suffix = errorRequestId ? " (" + errorRequestId + ")" : "";
+        toast.error(message + suffix);
+        return null;
+      }
+    }
+
+    uploadRef.current = { file, uploadId };
+    return uploadId;
+  }
+
   async function request(path: string, mappingOverride?: ColumnMapping) {
     if (!file) return null;
     setLoading(true);
     try {
+      const uploadId = await uploadLargeFile();
+      if (file.size > DIRECT_UPLOAD_LIMIT && !uploadId) return null;
       const body = new FormData();
-      body.set("file", file);
+      if (uploadId) body.set("uploadId", uploadId);
+      else body.set("file", file);
       body.set("year", String(year));
       const mapping = mappingOverride ?? report?.mapping;
       if (mapping) body.set("mapping", JSON.stringify(mapping));
       if (report) body.set("checksum", report.checksum);
-      const response = await fetch(path, { method: "POST", headers: { "x-csrf-token": csrfFromDocument() }, body });
-      const data = await response.json();
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {
+          "x-csrf-token": csrfFromDocument(),
+          "x-request-id": crypto.randomUUID()
+        },
+        body
+      });
+      const data = await parsedResponse(response);
       if (!response.ok) {
-        toast.error(translatedApiError(data.error, dict, locale));
+        const code = typeof data.error === "string" ? data.error : "INVALID_SERVER_RESPONSE";
+        const errorRequestId = responseRequestId(data);
+        const suffix = errorRequestId ? " (" + errorRequestId + ")" : "";
+        toast.error(translatedApiError(code, dict, locale) + suffix);
         return null;
       }
       return data;
@@ -66,7 +154,6 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
       setLoading(false);
     }
   }
-
   async function preview(mapping?: ColumnMapping) {
     const data = await request("/api/admin/import/preview", mapping);
     if (!data) return;
@@ -86,6 +173,7 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
       setReport(null);
       setMappingRequest(null);
       setFile(null);
+      uploadRef.current = null;
     }
   }
 
@@ -96,7 +184,7 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
     <section className="surface mt-7 p-5">
       <div className="grid gap-4 sm:grid-cols-2">
         <label><span className="label">{dict.examYear}</span><input className="field" type="number" min="2000" max="2100" value={year} onChange={(event) => { setYear(Number(event.target.value)); resetResult(); }} /></label>
-        <label><span className="label">{dict.file}</span><input className="field file:me-3 file:rounded-lg file:border-0 file:bg-[var(--accent-soft)] file:px-3 file:py-1 file:font-bold" type="file" accept=".xlsx" onChange={(event) => { setFile(event.target.files?.[0] || null); resetResult(); }} /></label>
+        <label><span className="label">{dict.file}</span><input className="field file:me-3 file:rounded-lg file:border-0 file:bg-[var(--accent-soft)] file:px-3 file:py-1 file:font-bold" type="file" accept=".xlsx" onChange={(event) => { uploadRef.current = null; setFile(event.target.files?.[0] || null); resetResult(); }} /></label>
       </div>
       <button className="button mt-5" disabled={!file || loading} onClick={() => preview()}>{loading ? "â€¦" : dict.validate}</button>
     </section>
@@ -127,7 +215,7 @@ function translatedError(message: string, dict: AdminDictionary) {
 }
 
 function translatedApiError(code: string, dict: AdminDictionary, locale: Locale) {
-  const messages: Record<string, string> = { INVALID_FILE_TYPE: dict.invalidFile, INVALID_XLSX_SIGNATURE: dict.invalidFile, INVALID_EXCEL_FILE: dict.invalidFile, FILE_SIZE: dict.invalidFile, DUPLICATE_FILE: dict.duplicateFile, FILE_CHANGED_AFTER_PREVIEW: dict.fileChanged, IMPORT_TRANSACTION_FAILED: dict.importFailed, SERVICE_UNAVAILABLE: dict.serviceUnavailable, DATABASE_CONNECTION_FAILED: locale === "ar" ? "تعذر الاتصال بقاعدة البيانات بعد ثلاث محاولات. أعد المحاولة بعد لحظات." : "Connexion à la base impossible après trois tentatives. Réessayez dans quelques instants.", DATABASE_SCHEMA_ERROR: locale === "ar" ? "مخطط قاعدة البيانات غير جاهز. تحقق من الترحيلات." : "Le schéma de la base n’est pas prêt. Vérifiez les migrations.", INVALID_COLUMN_MAPPING: locale === "ar" ? "ظ…ط·ط§ط¨ظ‚ط© ط§ظ„ط£ط¹ظ…ط¯ط© ط؛ظٹط± طµط§ظ„ط­ط©" : "La correspondance des colonnes est invalide", MAPPING_REQUIRED: locale === "ar" ? "ظٹط¬ط¨ ط¥ظƒظ…ط§ظ„ ظ…ط·ط§ط¨ظ‚ط© ط§ظ„ط£ط¹ظ…ط¯ط©" : "La correspondance des colonnes doit أھtre complأ©tأ©e" };
+  const messages: Record<string, string> = { INVALID_FILE_TYPE: dict.invalidFile, INVALID_XLSX_SIGNATURE: dict.invalidFile, INVALID_EXCEL_FILE: dict.invalidFile, FILE_SIZE: dict.invalidFile, FUNCTION_PAYLOAD_TOO_LARGE: locale === "ar" ? "حجم الملف يتجاوز حد الرفع المباشر. اعد المحاولة باستخدام الرفع الامن." : "Le fichier depasse la limite directe. Reessayez avec envoi securise.", UPLOAD_FAILED: dict.serviceUnavailable, INVALID_SERVER_RESPONSE: dict.serviceUnavailable, DUPLICATE_FILE: dict.duplicateFile, FILE_CHANGED_AFTER_PREVIEW: dict.fileChanged, IMPORT_TRANSACTION_FAILED: dict.importFailed, SERVICE_UNAVAILABLE: dict.serviceUnavailable, DATABASE_CONNECTION_FAILED: locale === "ar" ? "تعذر الاتصال بقاعدة البيانات بعد ثلاث محاولات. أعد المحاولة بعد لحظات." : "Connexion à la base impossible après trois tentatives. Réessayez dans quelques instants.", DATABASE_SCHEMA_ERROR: locale === "ar" ? "مخطط قاعدة البيانات غير جاهز. تحقق من الترحيلات." : "Le schéma de la base n’est pas prêt. Vérifiez les migrations.", INVALID_COLUMN_MAPPING: locale === "ar" ? "ظ…ط·ط§ط¨ظ‚ط© ط§ظ„ط£ط¹ظ…ط¯ط© ط؛ظٹط± طµط§ظ„ط­ط©" : "La correspondance des colonnes est invalide", MAPPING_REQUIRED: locale === "ar" ? "ظٹط¬ط¨ ط¥ظƒظ…ط§ظ„ ظ…ط·ط§ط¨ظ‚ط© ط§ظ„ط£ط¹ظ…ط¯ط©" : "La correspondance des colonnes doit أھtre complأ©tأ©e" };
   return messages[code] || dict.importFailed;
 }
 

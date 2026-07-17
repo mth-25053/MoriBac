@@ -37,3 +37,4 @@ pnpm-debug.log*
 /tmp/
 .DS_Store
 Thumbs.db
+VERCEL_ENVIRONMENT.md

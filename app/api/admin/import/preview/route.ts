@@ -4,48 +4,87 @@ import { databaseUnavailable, isDatabaseError } from "@/lib/database-errors";
 import { inspectExcel, parseExcel, parseMappingJson, validateExcelFile } from "@/lib/excel";
 import { MappingRepository } from "@/lib/excel/mapping-repository";
 import { resolveMapping } from "@/lib/excel/mapping-service";
+import { importWorkbookInput } from "@/lib/import-request";
 import { DuplicateImportError, errorSummary, saveValidationReport } from "@/lib/import-batches";
 import { authorizeMutation, apiError } from "@/lib/http";
+import { logRequest, logRequestError, requestId } from "@/lib/request-log";
 import { yearSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
-  const auth = await authorizeMutation(request);
-  if ("error" in auth) return auth.error;
-  const form = await request.formData();
-  const file = form.get("file");
-  const parsedYear = yearSchema.safeParse({ year: form.get("year") });
-  if (!(file instanceof File) || !parsedYear.success) return apiError("FILE_AND_YEAR_REQUIRED");
+  const id = requestId(request);
+  const startedAt = Date.now();
+  let stage = "request-started";
+  logRequest(id, "import-preview", stage, {
+    contentLength: request.headers.get("content-length"),
+    contentType: request.headers.get("content-type")
+  });
 
-  let databaseStage = "not-started";
+  const auth = await authorizeMutation(request, id);
+  if ("error" in auth) return auth.error;
+
   try {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    validateExcelFile(buffer, file.name, file.type);
-    const inspection = await inspectExcel(buffer);
+    stage = "request-form-read";
+    const form = await request.formData();
+    const parsedYear = yearSchema.safeParse({ year: form.get("year") });
+    if (!parsedYear.success) return apiError("FILE_AND_YEAR_REQUIRED", 400, { requestId: id });
+
+    stage = "workbook-input-read";
+    const input = await importWorkbookInput(form, auth.session.adminId);
+    logRequest(id, "import-preview", "workbook-received", {
+      source: input.source,
+      bytes: input.buffer.length,
+      contentType: input.mimeType
+    });
+
+    stage = "workbook-validation";
+    validateExcelFile(input.buffer, input.fileName, input.mimeType);
+    const inspection = await inspectExcel(input.buffer);
     const provided = parseMappingJson(form.get("mapping"));
     const repository = new MappingRepository();
-    databaseStage = "mapping-read";
+
+    stage = "mapping-read";
     const resolved = await resolveMapping(inspection, provided, repository);
     if (resolved.missing.length) {
+      logRequest(id, "import-preview", "mapping-required", {
+        source: input.source,
+        headerRow: inspection.headerRow,
+        columnCount: inspection.columns.length,
+        elapsedMs: Date.now() - startedAt
+      });
       return NextResponse.json({
         mappingRequired: true,
-        checksum: createHash("sha256").update(buffer).digest("hex"),
+        checksum: createHash("sha256").update(input.buffer).digest("hex"),
         sheetName: inspection.sheetName,
         headerRow: inspection.headerRow,
         structureKey: inspection.structureKey,
         columns: inspection.columns,
         mapping: resolved.mapping,
-        missingRequired: resolved.missing
+        missingRequired: resolved.missing,
+        requestId: id
       });
     }
 
-    const report = await parseExcel(buffer, resolved.mapping, inspection);
-    databaseStage = "mapping-save";
+    stage = "workbook-parse";
+    const report = await parseExcel(input.buffer, resolved.mapping, inspection);
+    stage = "mapping-save";
     await repository.save(inspection, resolved.mapping);
-    databaseStage = "preview-validation-save";
-    const { batch } = await saveValidationReport({ report, fileName: file.name, year: parsedYear.data.year, adminId: auth.session.adminId });
+    stage = "preview-validation-save";
+    const { batch } = await saveValidationReport({
+      report,
+      fileName: input.fileName,
+      year: parsedYear.data.year,
+      adminId: auth.session.adminId
+    });
+    logRequest(id, "import-preview", "preview-ready", {
+      source: input.source,
+      totalRows: report.totalRows,
+      validRows: report.validRows,
+      invalidRows: report.invalidRows,
+      elapsedMs: Date.now() - startedAt
+    });
     return NextResponse.json({
       mappingRequired: false,
       mappingSource: resolved.source,
@@ -60,12 +99,17 @@ export async function POST(request: Request) {
       invalidRows: report.invalidRows,
       preview: report.preview,
       errors: errorSummary(report),
-      errorCount: report.errors.length
+      errorCount: report.errors.length,
+      requestId: id
     });
   } catch (error) {
-    if (error instanceof DuplicateImportError) return apiError("DUPLICATE_FILE", 409);
-    if (isDatabaseError(error)) return databaseUnavailable(error, `import-preview:${databaseStage}`);
+    logRequestError(id, "import-preview", "request-failed", error, {
+      stage,
+      elapsedMs: Date.now() - startedAt
+    });
+    if (error instanceof DuplicateImportError) return apiError("DUPLICATE_FILE", 409, { requestId: id });
+    if (isDatabaseError(error)) return databaseUnavailable(error, "import-preview:" + stage, id);
     const code = error instanceof Error && /^[A-Z0-9_]+$/.test(error.message) ? error.message : "INVALID_EXCEL_FILE";
-    return apiError(code, 422);
+    return apiError(code, 422, { requestId: id });
   }
 }

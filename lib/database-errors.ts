@@ -8,8 +8,8 @@ export function isDatabaseError(error: unknown) {
   return /^P\d{4}$/.test(details.code) || details.code === "DB_TIMEOUT" || details.name.startsWith("Prisma") || details.name === "DatabaseTimeoutError";
 }
 
-export function databaseUnavailable(error: unknown, context: string) {
-  const requestId = randomUUID();
+export function databaseUnavailable(error: unknown, context: string, existingRequestId?: string) {
+  const requestId = existingRequestId || randomUUID();
   const details = databaseErrorDetails(error);
   const schemaError = details.code === "P2021" || details.code === "P2022";
   const status = schemaError ? 500 : 503;
