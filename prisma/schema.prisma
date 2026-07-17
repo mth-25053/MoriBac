@@ -71,23 +71,24 @@ model ExamYear {
 }
 
 model Candidate {
-  id              String      @id @default(cuid())
-  candidateNumber String
-  fullName        String
-  series          String
-  average         Decimal     @db.Decimal(5, 2)
-  decision        Decision
-  wilaya          String?
-  examCenter      String?
-  school          String?
-  birthDate       String?
-  birthPlace      String?
-  candidateType   String?
-  examYearId      String
-  importBatchId   String
-  createdAt       DateTime    @default(now())
-  examYear        ExamYear    @relation(fields: [examYearId], references: [id], onDelete: Cascade)
-  importBatch     ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  id               String      @id @default(cuid())
+  candidateNumber  String
+  fullName         String
+  series           String
+  average          Decimal     @db.Decimal(5, 2)
+  decision         Decision
+  officialDecision String?
+  wilaya           String?
+  examCenter       String?
+  school           String?
+  birthDate        String?
+  birthPlace       String?
+  candidateType    String?
+  examYearId       String
+  importBatchId    String
+  createdAt        DateTime    @default(now())
+  examYear         ExamYear    @relation(fields: [examYearId], references: [id], onDelete: Cascade)
+  importBatch      ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
 
   @@unique([examYearId, candidateNumber])
   @@index([candidateNumber])

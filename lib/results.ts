@@ -28,7 +28,7 @@ function present(values: Array<string | null>) {
 
 export async function getFilterOptions(examYearId: string, params: { series?: string; wilaya?: string; center?: string }, database = db) {
   return withDatabaseRetry(async () => {
-    const base = { examYearId };
+    const base = { examYearId, decision: { not: "ANNULE" as const } };
     const seriesRows = await database.candidate.findMany({ where: base, distinct: ["series"], select: { series: true }, orderBy: { series: "asc" } });
     if (!params.series) return { series: seriesRows.map((row) => row.series), wilayas: [], centers: [], schools: [] };
 
@@ -66,9 +66,10 @@ export async function getFilterOptions(examYearId: string, params: { series?: st
 }
 
 export function resultWhere(examYearId: string, filters: { series: string; wilaya: string; center: string; school: string }): Prisma.CandidateWhereInput | null {
-  if (filters.school) return { examYearId, school: filters.school, ...(filters.center ? { examCenter: filters.center } : {}), ...(filters.wilaya ? { wilaya: filters.wilaya } : {}) };
-  if (filters.center) return { examYearId, examCenter: filters.center, ...(filters.wilaya ? { wilaya: filters.wilaya } : {}) };
-  if (filters.series) return { examYearId, series: filters.series };
+  const rankable = { examYearId, decision: { not: "ANNULE" as const } };
+  if (filters.school) return { ...rankable, school: filters.school, ...(filters.center ? { examCenter: filters.center } : {}), ...(filters.wilaya ? { wilaya: filters.wilaya } : {}) };
+  if (filters.center) return { ...rankable, examCenter: filters.center, ...(filters.wilaya ? { wilaya: filters.wilaya } : {}) };
+  if (filters.series) return { ...rankable, series: filters.series };
   return null;
 }
 

@@ -24,6 +24,7 @@ button,a,select { -webkit-tap-highlight-color:transparent; }
 .muted { color:var(--muted); }
 .badge { display:inline-flex; padding:.3rem .62rem; border-radius:999px; background:var(--accent-soft); color:var(--accent-strong); font-size:.78rem; font-weight:800; white-space:nowrap; }
 .badge.fail { background:color-mix(in srgb,var(--danger) 12%,var(--surface)); color:var(--danger); }
+.badge.cancelled { background:var(--surface-2); color:var(--muted); border:1px solid var(--line); }
 .skeleton { animation:pulse 1.3s ease-in-out infinite; background:var(--surface-2); border-radius:.5rem; }
 @keyframes pulse { 50% { opacity:.5; } }
 @media (max-width:767px) { .shell { width:min(100% - 1.25rem,1180px); } }

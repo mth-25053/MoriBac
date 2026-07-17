@@ -20,7 +20,7 @@ export const dictionaries = {
     aboutTitle: "نتائج موثوقة، وتجربة تحترم الجميع.", aboutText: "صُممت موري باك لتسهيل الوصول إلى نتائج البكالوريا الموريتانية من الهاتف أو الحاسوب، مع حماية البيانات الشخصية وإتاحة المعلومات الضرورية فقط.",
     privacyTitle: "الخصوصية أولاً", privacyText: "لا نعرض تاريخ الميلاد أو مكانه. البحث العام لا يتطلب إنشاء حساب.",
     accessibilityTitle: "متاحة للجميع", accessibilityText: "واجهة ثنائية اللغة، متوافقة مع لوحة المفاتيح، ومقروءة في الوضعين الفاتح والداكن.",
-    decisions: { ADMIS: "ناجح", SESSIONNAIRE: "الدورة التكميلية", REDOUBLE: "راسب", ABSENT: "غائب", ANNULE: "ملغى" }
+    decisions: { ADMIS: "ناجح", SESSIONNAIRE: "الدورة التكميلية", REDOUBLE: "راسب", ABSENT: "غائب", ANNULE: "إلغاء الامتحان" }
   },
   fr: {
     brand: "MoriBac", home: "Accueil", about: "À propos", admin: "Administration",
@@ -38,7 +38,7 @@ export const dictionaries = {
     aboutTitle: "Des résultats fiables, une expérience respectueuse.", aboutText: "MoriBac facilite l’accès aux résultats du baccalauréat mauritanien sur mobile et ordinateur, tout en protégeant les données personnelles et en n’affichant que l’essentiel.",
     privacyTitle: "La confidentialité d’abord", privacyText: "La date et le lieu de naissance ne sont jamais affichés. Aucun compte n’est requis pour consulter les résultats.",
     accessibilityTitle: "Accessible à tous", accessibilityText: "Une interface bilingue, utilisable au clavier et lisible en thèmes clair et sombre.",
-    decisions: { ADMIS: "Admis", SESSIONNAIRE: "Session complémentaire", REDOUBLE: "Non admis", ABSENT: "Absent", ANNULE: "Annulé" }
+    decisions: { ADMIS: "Admis", SESSIONNAIRE: "Session complémentaire", REDOUBLE: "Non admis", ABSENT: "Absent", ANNULE: "Examen annulé" }
   }
 } as const;
 

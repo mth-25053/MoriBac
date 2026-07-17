@@ -36,6 +36,7 @@ async function main() {
       const result = await browseResults(year.id, { series: item.series, wilaya: "", center: "", school: "", sort: "highest", page: 1 }, db);
       assert(result.candidates.length === Math.min(10, result.total), "Top 10 count failed for " + item.series);
       assert(result.candidates.every((row) => row.series === item.series), "Top 10 series failed for " + item.series);
+      assert(result.candidates.every((row) => row.decision !== "ANNULE"), "ANNULE appeared in Top 10 for " + item.series);
       assert(result.candidates.every((row, index, rows) => index === 0 || rows[index - 1].average >= row.average), "Top 10 order failed for " + item.series);
       top10[item.series] = result.candidates.length;
     }

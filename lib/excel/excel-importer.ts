@@ -27,6 +27,17 @@ function normalizeValue(value: unknown) {
   return String(value ?? "").normalize("NFD").replace(/\p{M}/gu, "").trim().toUpperCase().replace(/[^\p{L}\p{N}]/gu, "");
 }
 
+function isCancellationDecision(key: string) {
+  const arabicExam = "\u0627\u0645\u062a\u062d\u0627\u0646";
+  const arabicCancelled = "\u0645\u0644\u063a";
+  const arabicCancellation = "\u0627\u0644\u063a\u0627\u0621";
+  return key === "\u0645\u0644\u063a\u0649"
+    || key === "\u0627\u0644\u063a\u0627\u0621\u0627\u0644\u0627\u0645\u062a\u062d\u0627\u0646"
+    || (key.includes(arabicExam) && (key.includes(arabicCancelled) || key.includes(arabicCancellation)))
+    || (key.includes("EXAMEN") && (key.includes("ANNULE") || key.includes("ANNULATION")))
+    || key.startsWith("ANNULE")
+    || key.startsWith("CANCELLED");
+}
 function mapDecision(value: string): DecisionValue | null {
   const key = normalizeValue(value);
   const values: Record<string, DecisionValue> = {
@@ -55,7 +66,7 @@ function mapDecision(value: string): DecisionValue | null {
     ?? (key.startsWith("AJOURNE") ? "REDOUBLE" : null)
     ?? (key.startsWith("SESSIONNAIRE") ? "SESSIONNAIRE" : null)
     ?? (key.startsWith("ABSENT") || key.startsWith("ABSCENT") ? "ABSENT" : null)
-    ?? (key.startsWith("ANNULE") || key.startsWith("EXAMENANNULE") ? "ANNULE" : null)
+    ?? (isCancellationDecision(key) ? "ANNULE" : null)
     ?? key;
   return DECISIONS.includes(mapped as DecisionValue) ? mapped as DecisionValue : null;
 }
@@ -160,6 +171,7 @@ export class ExcelImporter {
         series: cleanText(String(raw.series)),
         average: Math.round(average * 100) / 100,
         decision,
+        officialDecision: optionalText(String(raw.decision ?? "")),
         wilaya: optionalText(String(raw.wilaya ?? "")),
         examCenter: optionalText(String(raw.examCenter ?? "")),
         school: optionalText(String(raw.school ?? "")),

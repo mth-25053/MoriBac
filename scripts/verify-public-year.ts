@@ -85,6 +85,7 @@ async function main() {
       const result = await getJson<Results>("/api/public/results?" + new URLSearchParams({ year: String(yearNumber), series }));
       assert(result.candidates.length === Math.min(10, result.total), "Top 10 count failed for " + series);
       assert(result.candidates.every((row) => row.series === series), "Series filter failed for " + series);
+      assert(result.candidates.every((row) => row.decision !== "ANNULE"), "ANNULE appeared in Top 10 for " + series);
       assert(result.candidates.every((row, index, rows) => index === 0 || rows[index - 1].average >= row.average), "Top 10 order failed for " + series);
       top10[series] = result.candidates.length;
     }

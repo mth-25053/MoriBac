@@ -1,16 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
+import { candidateRank, decisionBadgeClass } from "@/lib/decision";
 import { browseResults, findCandidateResult, getFilterOptions, resultOrder, resultWhere } from "@/lib/results";
 
 const filters = { series: "M", wilaya: "Trarza", center: "", school: "", sort: "lowest", page: 1 };
 function candidate(overrides: Record<string, unknown> = {}) {
   return { candidateNumber: "00002", fullName: "Candidate", series: "M", average: 8.47, decision: "SESSIONNAIRE", wilaya: "Trarza", examCenter: "Centre", school: "School", ...overrides };
 }
+const rankable = (examYearId = "y") => ({ examYearId, decision: { not: "ANNULE" } });
 
-describe("mandatory browsing priority", () => {
-  it("shows nothing without a series", () => expect(resultWhere("y", { series: "", wilaya: "", center: "", school: "" })).toBeNull());
-  it("uses only the series for Top 10 even after wilaya selection", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "", school: "" })).toEqual({ examYearId: "y", series: "M" }));
-  it("ignores series when a center is selected", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "Centre 1", school: "" })).toEqual({ examYearId: "y", examCenter: "Centre 1", wilaya: "Trarza" }));
-  it("gives school priority and ignores series", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "Centre 1", school: "Lycأ©e" })).toEqual({ examYearId: "y", school: "Lycأ©e", examCenter: "Centre 1", wilaya: "Trarza" }));
+describe("ranking and browsing business rules", () => {
+  it("shows nothing without a ranking filter", () => expect(resultWhere("y", { series: "", wilaya: "", center: "", school: "" })).toBeNull());
+  it("excludes ANNULE from Top 10 while using only the series", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "", school: "" })).toEqual({ ...rankable(), series: "M" }));
+  it("excludes ANNULE from center rankings", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "Centre 1", school: "" })).toEqual({ ...rankable(), examCenter: "Centre 1", wilaya: "Trarza" }));
+  it("excludes ANNULE from school rankings", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "Centre 1", school: "School" })).toEqual({ ...rankable(), school: "School", examCenter: "Centre 1", wilaya: "Trarza" }));
   it("supports all detailed sorting modes", () => {
     expect(resultOrder("lowest")[0]).toEqual({ average: "asc" });
     expect(resultOrder("name")[0]).toEqual({ fullName: "asc" });
@@ -18,47 +20,66 @@ describe("mandatory browsing priority", () => {
     expect(resultOrder("highest")[0]).toEqual({ average: "desc" });
   });
 
-  it("always requests the highest Top 10 for series mode", async () => {
+  it("requests only rankable candidates for every series Top 10", async () => {
     const database = { candidate: { findMany: vi.fn().mockResolvedValue([candidate()]), count: vi.fn().mockResolvedValue(75) } };
     const result = await browseResults("year", filters, database as never);
-    expect(database.candidate.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { examYearId: "year", series: "M" }, orderBy: [{ average: "desc" }, { fullName: "asc" }], take: 10, skip: 0 }));
+    expect(database.candidate.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { ...rankable("year"), series: "M" }, orderBy: [{ average: "desc" }, { fullName: "asc" }], take: 10, skip: 0 }));
+    expect(database.candidate.count).toHaveBeenCalledWith({ where: { ...rankable("year"), series: "M" } });
     expect(result.candidates).toHaveLength(1);
   });
 
-  it("returns every series in a center with 50-row server pagination and statistics", async () => {
+  it("excludes ANNULE from center rows, rankings, outcome counts, highest average, and rate denominator", async () => {
     const findMany = vi.fn().mockResolvedValue([candidate({ series: "M" }), candidate({ candidateNumber: "10000", series: "SN" })]);
     const count = vi.fn().mockResolvedValueOnce(120).mockResolvedValueOnce(40).mockResolvedValueOnce(20).mockResolvedValueOnce(55);
-    const database = { candidate: { findMany, count, aggregate: vi.fn().mockResolvedValue({ _max: { average: 17.95 } }) } };
+    const aggregate = vi.fn().mockResolvedValue({ _max: { average: 17.95 } });
+    const database = { candidate: { findMany, count, aggregate } };
     const result = await browseResults("year", { ...filters, center: "Centre", page: 2, sort: "name" }, database as never);
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { examYearId: "year", examCenter: "Centre", wilaya: "Trarza" }, take: 50, skip: 50 }));
-    expect(result.candidates.map((row) => row.series)).toEqual(["M", "SN"]);
+    const where = { ...rankable("year"), examCenter: "Centre", wilaya: "Trarza" };
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where, take: 50, skip: 50 }));
+    expect(count.mock.calls.map((call) => call[0])).toEqual([
+      { where },
+      { where: { AND: [where, { decision: "ADMIS" }] } },
+      { where: { AND: [where, { decision: "SESSIONNAIRE" }] } },
+      { where: { AND: [where, { decision: "REDOUBLE" }] } }
+    ]);
+    expect(aggregate).toHaveBeenCalledWith({ where, _max: { average: true } });
     expect(result.pageCount).toBe(3);
-    expect(result.statistics).toMatchObject({ total: 120, passed: 40, session: 20, failed: 55, highest: 17.95 });
+    expect(result.statistics).toMatchObject({ total: 120, passed: 40, session: 20, failed: 55, highest: 17.95, successRate: 40 / 120 * 100 });
   });
 
-  it("returns every series in the selected school", async () => {
+  it("excludes ANNULE from school rows and rankings", async () => {
     const findMany = vi.fn().mockResolvedValue([candidate({ series: "LO" }), candidate({ candidateNumber: "10001", series: "SN" })]);
     const database = { candidate: { findMany, count: vi.fn().mockResolvedValue(2), aggregate: vi.fn().mockResolvedValue({ _max: { average: 10 } }) } };
-    const result = await browseResults("year", { ...filters, center: "Centre", school: "School" }, database as never);
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { examYearId: "year", school: "School", examCenter: "Centre", wilaya: "Trarza" } }));
-    expect(result.candidates.map((row) => row.series)).toEqual(["LO", "SN"]);
+    await browseResults("year", { ...filters, center: "Centre", school: "School" }, database as never);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { ...rankable("year"), school: "School", examCenter: "Centre", wilaya: "Trarza" } }));
   });
 
-  it("loads centers by wilaya without restricting them to the selected series", async () => {
-    const findMany = vi.fn()
-      .mockResolvedValueOnce([{ series: "M" }])
-      .mockResolvedValueOnce([{ wilaya: "Trarza" }])
-      .mockResolvedValueOnce([{ examCenter: "Lycأ©e Rosso" }])
-      .mockResolvedValueOnce([]);
+  it("excludes ANNULE-only values from ranking filter options", async () => {
+    const findMany = vi.fn().mockResolvedValueOnce([{ series: "M" }]).mockResolvedValueOnce([{ wilaya: "Trarza" }]).mockResolvedValueOnce([{ examCenter: "Lycée Rosso" }]).mockResolvedValueOnce([]);
     const database = { candidate: { findMany } };
     const options = await getFilterOptions("year", { series: "M", wilaya: "Trarza" }, database as never);
-    expect(findMany.mock.calls[2][0].where).toEqual({ examYearId: "year", wilaya: "Trarza", examCenter: { not: null } });
-    expect(options.centers).toEqual(["Lycأ©e Rosso"]);
+    expect(findMany.mock.calls[0][0].where).toEqual(rankable("year"));
+    expect(findMany.mock.calls[2][0].where).toEqual({ ...rankable("year"), wilaya: "Trarza", examCenter: { not: null } });
+    expect(options.centers).toEqual(["Lycée Rosso"]);
   });
 
-  it("returns null for an unknown candidate", async () => {
-    const findUnique = vi.fn().mockResolvedValue(null);
-    expect(await findCandidateResult("year", "99999", { candidate: { findUnique } } as never)).toBeNull();
-    expect(findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { examYearId_candidateNumber: { examYearId: "year", candidateNumber: "99999" } } }));
+  it.each([0, 19.75])("keeps an ANNULE candidate searchable regardless of average %s", async (average) => {
+    const cancelled = candidate({ decision: "ANNULE", average });
+    const findUnique = vi.fn().mockResolvedValue(cancelled);
+    await expect(findCandidateResult("year", "00009", { candidate: { findUnique } } as never)).resolves.toEqual(cancelled);
+  });
+
+  it("keeps valid non-cancelled candidate search unchanged", async () => {
+    const normal = candidate({ decision: "ADMIS", average: 14 });
+    const findUnique = vi.fn().mockResolvedValue(normal);
+    await expect(findCandidateResult("year", "00002", { candidate: { findUnique } } as never)).resolves.toEqual(normal);
+  });
+
+  it("never assigns a displayed rank or failure style to ANNULE", () => {
+    expect(candidateRank("ANNULE", 1)).toBeNull();
+    expect(candidateRank("ADMIS", 1)).toBe(1);
+    expect(decisionBadgeClass("ANNULE")).toBe("cancelled");
+    expect(decisionBadgeClass("REDOUBLE")).toBe("fail");
+    expect(decisionBadgeClass("ADMIS")).toBe("");
   });
 });

@@ -43,6 +43,7 @@ export type ParsedCandidate = {
   series: string;
   average: number;
   decision: DecisionValue;
+  officialDecision: string | null;
   wilaya: string | null;
   examCenter: string | null;
   school: string | null;
