@@ -1,0 +1,53 @@
+{
+  "name": "moribac",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "admin:create": "tsx scripts/create-admin.ts",
+    "env:check": "tsx scripts/check-env.ts",
+    "excel:analyze": "tsx scripts/analyze-workbook.ts BAC2025.xlsx",
+    "db:verify": "tsx scripts/verify-database.ts",
+    "verify:live": "tsx scripts/verify-live-api.ts",
+    "verify:mapping": "tsx scripts/verify-mapping-api.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "3.0.2",
+    "exceljs": "4.4.0",
+    "jose": "6.1.3",
+    "lucide-react": "0.468.0",
+    "next": "16.2.10",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "sonner": "2.0.7",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.1.18",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.2",
+    "eslint-config-next": "16.2.10",
+    "prisma": "^6.19.3",
+    "tailwindcss": "4.1.18",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "uuid": "11.1.1",
+    "postcss": "8.5.10",
+    "esbuild": "0.28.1"
+  }
+}

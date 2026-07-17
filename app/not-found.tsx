@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function NotFound(){return <main className="shell grid min-h-screen place-items-center py-16"><div className="text-center"><div className="eyebrow">404</div><h1 className="mt-4 text-4xl font-black">Page introuvable · الصفحة غير موجودة</h1><p className="muted mt-4">La page demandée n’existe pas.</p><Link className="button mt-7" href="/">Retour · العودة</Link></div></main>}

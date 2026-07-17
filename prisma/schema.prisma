@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Decision {
+  ADMIS
+  SESSIONNAIRE
+  REDOUBLE
+  ABSENT
+  ANNULE
+}
+
+enum ImportStatus {
+  VALIDATED
+  IMPORTED
+  FAILED
+}
+
+model Admin {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  passwordHash String
+  imports      ImportBatch[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model ExamYear {
+  id          String        @id @default(cuid())
+  year        Int           @unique
+  isPublished Boolean       @default(false)
+  isDefault   Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  candidates  Candidate[]
+  imports     ImportBatch[]
+
+  @@index([isPublished, isDefault])
+}
+
+model Candidate {
+  id              String      @id @default(cuid())
+  candidateNumber String
+  fullName        String
+  series          String
+  average         Decimal     @db.Decimal(5, 2)
+  decision        Decision
+  wilaya          String?
+  examCenter      String?
+  school          String?
+  birthDate       String?
+  birthPlace      String?
+  candidateType   String?
+  examYearId      String
+  importBatchId   String
+  createdAt       DateTime    @default(now())
+  examYear        ExamYear    @relation(fields: [examYearId], references: [id], onDelete: Cascade)
+  importBatch     ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+
+  @@unique([examYearId, candidateNumber])
+  @@index([candidateNumber])
+  @@index([series])
+  @@index([examCenter])
+  @@index([school])
+  @@index([wilaya])
+  @@index([average])
+  @@index([examYearId, series, average])
+  @@index([examYearId, examCenter])
+  @@index([examYearId, school])
+}
+
+model ImportBatch {
+  id          String        @id @default(cuid())
+  fileName    String
+  checksum    String        @unique
+  status      ImportStatus
+  totalRows   Int
+  validRows   Int
+  invalidRows Int
+  importedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  adminId     String
+  examYearId  String
+  admin       Admin         @relation(fields: [adminId], references: [id], onDelete: Restrict)
+  examYear    ExamYear      @relation(fields: [examYearId], references: [id], onDelete: Cascade)
+  candidates  Candidate[]
+  errors      ImportError[]
+
+  @@index([examYearId, createdAt])
+  @@index([adminId])
+}
+
+model ImportError {
+  id            String      @id @default(cuid())
+  rowNumber     Int
+  field         String?
+  message       String
+  rawData       Json?
+  importBatchId String
+  importBatch   ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+
+  @@index([importBatchId])
+}
+
+model ExcelMapping {
+  id           String   @id @default(cuid())
+  structureKey String   @unique
+  sheetName    String
+  headerRow    Int
+  headers      Json
+  mapping      Json
+  lastUsedAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([lastUsedAt])
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model LoginThrottle {
+  key          String    @id
+  attempts     Int       @default(0)
+  windowStart  DateTime  @default(now())
+  blockedUntil DateTime?
+  updatedAt    DateTime  @updatedAt
+}

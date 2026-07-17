@@ -1,0 +1,2 @@
+"use client";
+export default function ErrorPage({reset}:{error:Error&{digest?:string};reset:()=>void}){return <main className="shell grid min-h-screen place-items-center py-16"><div className="surface max-w-lg p-8 text-center"><div className="eyebrow">500</div><h1 className="mt-3 text-3xl font-black">Une erreur est survenue · حدث خطأ</h1><p className="muted mt-3">Veuillez réessayer dans un instant. · يرجى المحاولة بعد قليل.</p><button className="button mt-6" onClick={reset}>Réessayer · إعادة المحاولة</button></div></main>}

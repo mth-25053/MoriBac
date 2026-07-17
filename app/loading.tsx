@@ -1,0 +1,1 @@
+export default function Loading(){return <main className="shell space-y-5 py-16" aria-label="Loading"><div className="skeleton h-10 w-1/2"/><div className="skeleton h-56"/><div className="skeleton h-72"/></main>}
