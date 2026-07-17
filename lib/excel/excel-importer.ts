@@ -47,6 +47,7 @@ function mapDecision(value: string): DecisionValue | null {
     ANNULE: "ANNULE",
     ANNULEE: "ANNULE",
     CANCELLED: "ANNULE",
+    "\u0627\u0644\u063a\u0627\u0621\u0627\u0644\u0627\u0645\u062a\u062d\u0627\u0646": "ANNULE",
     ملغى: "ANNULE"
   };
   const mapped = values[key]
@@ -54,7 +55,7 @@ function mapDecision(value: string): DecisionValue | null {
     ?? (key.startsWith("AJOURNE") ? "REDOUBLE" : null)
     ?? (key.startsWith("SESSIONNAIRE") ? "SESSIONNAIRE" : null)
     ?? (key.startsWith("ABSENT") || key.startsWith("ABSCENT") ? "ABSENT" : null)
-    ?? (key.startsWith("ANNULE") ? "ANNULE" : null)
+    ?? (key.startsWith("ANNULE") || key.startsWith("EXAMENANNULE") ? "ANNULE" : null)
     ?? key;
   return DECISIONS.includes(mapped as DecisionValue) ? mapped as DecisionValue : null;
 }

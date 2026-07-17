@@ -80,6 +80,29 @@ describe("schema-independent Excel validation", () => {
     expect(report.invalidRows).toBe(0);
     expect(report.rows.map((row) => row.decision)).toEqual(["ADMIS", "REDOUBLE", "ABSENT"]);
   });
+  it("recognizes the Arabic BAC cancellation decision", async () => {
+    const buffer = await workbook([
+      ["Candidate Number", "Full Name", "Series", "Average", "Decision"],
+      ["2022-001", "Candidate", "SN", 0, "\u0625\u0644\u063a\u0627\u0621 \u0627\u0644\u0627\u0645\u062a\u062d\u0627\u0646"]
+    ]);
+    const report = await parseExcel(buffer);
+    expect(report.invalidRows).toBe(0);
+    expect(report.rows[0].decision).toBe("ANNULE");
+  });
+  it("recognizes descriptive French exam-cancellation decisions", async () => {
+    const decisions = [
+      "Examen annulé à cause du Téléphone",
+      "Examen annulé à cause du comportement",
+      "Examen Annulé"
+    ];
+    const buffer = await workbook([
+      ["Candidate Number", "Full Name", "Series", "Average", "Decision"],
+      ...decisions.map((decision, index) => [`2021-${index}`, "Candidate", "SN", 0, decision])
+    ]);
+    const report = await parseExcel(buffer);
+    expect(report.invalidRows).toBe(0);
+    expect(report.rows.map((row) => row.decision)).toEqual(["ANNULE", "ANNULE", "ANNULE"]);
+  });
   it("requests mapping instead of rejecting unknown required columns, then imports with manual mapping", async () => {
     const buffer = await workbook([
       ["Code X", "Identity X", "Branch X", "Grade X", "Outcome X", "Extra X"],
