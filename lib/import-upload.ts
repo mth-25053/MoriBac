@@ -8,7 +8,7 @@ import { IMPORT_CHUNK_SIZE } from "@/lib/import-upload-config";
 type PrismaTransaction = Prisma.TransactionClient;
 
 const MAX_CHUNKS = Math.ceil(MAX_UPLOAD_SIZE / IMPORT_CHUNK_SIZE);
-const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
+export const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type ImportUploadMetadata = {
   uploadId: string;
@@ -126,4 +126,28 @@ export async function deleteImportUpload(adminId: string, uploadId: string) {
     "import-upload-delete",
     { maxAttempts: 3, timeoutMs: 15_000 }
   );
+}
+
+/**
+ * Runs the same stale-upload cleanup normally triggered opportunistically on the next
+ * upload, but for every admin - intended for a scheduled job so cleanup doesn't depend
+ * on someone happening to upload again. Per-admin failures are isolated and reported,
+ * not thrown, so one bad admin's row can't stop the sweep for everyone else.
+ */
+export async function cleanupStaleUploadsForAllAdmins() {
+  const admins = await db.admin.findMany({ select: { id: true } });
+  const cutoff = new Date(Date.now() - UPLOAD_TTL_MS);
+  let failures = 0;
+  for (const admin of admins) {
+    try {
+      await withDatabaseRetry(
+        () => db.$transaction((tx) => expireStaleUploads(tx, admin.id, cutoff)),
+        "import-upload-cleanup-scheduled",
+        { maxAttempts: 2, timeoutMs: 15_000 }
+      );
+    } catch {
+      failures += 1;
+    }
+  }
+  return { adminsProcessed: admins.length, failures };
 }

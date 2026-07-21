@@ -1,14 +1,19 @@
+import { revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
+import { recordAudit } from "@/lib/audit-log";
 import { databaseUnavailable, isDatabaseError } from "@/lib/database-errors";
 import { inspectExcel, parseExcel, parseMappingJson, validateExcelFile } from "@/lib/excel";
 import { DecisionMappingRepository } from "@/lib/excel/decision-mapping-repository";
+import { KnownSeriesRepository } from "@/lib/excel/known-series-repository";
 import { MappingRepository } from "@/lib/excel/mapping-repository";
 import { resolveMapping } from "@/lib/excel/mapping-service";
 import { deleteImportUpload } from "@/lib/import-upload";
 import { importWorkbookInput } from "@/lib/import-request";
 import { DuplicateCandidateError, DuplicateImportError, errorSummary, insertCandidates, markBatchFailed, saveValidationReport } from "@/lib/import-batches";
 import { authorizeMutation, apiError } from "@/lib/http";
+import { emitAlert } from "@/lib/monitoring";
 import { logRequest, logRequestError, requestId } from "@/lib/request-log";
+import { clientIp } from "@/lib/security";
 import { yearSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -55,7 +60,7 @@ export async function POST(request: Request) {
 
     stage = "workbook-parse";
     const decisionMappingRepository = new DecisionMappingRepository();
-    const report = await parseExcel(input.buffer, resolved.mapping, inspection, decisionMappingRepository);
+    const report = await parseExcel(input.buffer, resolved.mapping, inspection, decisionMappingRepository, new KnownSeriesRepository());
     if (report.checksum !== expectedChecksum) return apiError("FILE_CHANGED_AFTER_PREVIEW", 409, { requestId: id });
 
     stage = "unknown-decision-check";
@@ -86,14 +91,28 @@ export async function POST(request: Request) {
 
     stage = "candidate-import-transaction";
     await insertCandidates({ examYearId: validation.examYear.id, batchId: validation.batch.id, rows: report.rows });
+    revalidateTag("published-year", "default");
+    revalidateTag("filter-options", "default");
+    await recordAudit({
+      adminId: auth.session.adminId,
+      action: "import.commit",
+      targetType: "ImportBatch",
+      targetId: batchId,
+      newValue: { year: parsedYear.data.year, fileName: input.fileName, imported: report.validRows },
+      ip: clientIp(request)
+    });
 
     if (uploadId) {
       stage = "upload-cleanup";
       await deleteImportUpload(auth.session.adminId, uploadId).catch((error) => {
-        logRequestError(id, "import-commit", "upload-cleanup-failed", error, { uploadId });
+        logRequestError(id, "import-commit", "upload-cleanup-failed", error, { route: "import-commit", adminId: auth.session.adminId, batchId, uploadId });
       });
     }
     logRequest(id, "import-commit", "import-complete", {
+      route: "import-commit",
+      adminId: auth.session.adminId,
+      batchId,
+      year: parsedYear.data.year,
       source: input.source,
       imported: report.validRows,
       elapsedMs: Date.now() - startedAt
@@ -101,6 +120,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, batchId, imported: report.validRows, requestId: id });
   } catch (error) {
     logRequestError(id, "import-commit", "request-failed", error, {
+      route: "import-commit",
+      adminId: auth.session.adminId,
       stage,
       batchId,
       elapsedMs: Date.now() - startedAt
@@ -117,6 +138,7 @@ export async function POST(request: Request) {
     }
     if (isDatabaseError(error)) return databaseUnavailable(error, "import-commit:" + stage, id);
     const code = error instanceof Error && /^[A-Z0-9_]+$/.test(error.message) ? error.message : "INVALID_EXCEL_FILE";
+    emitAlert("import-failure", "Unexpected import commit failure", { requestId: id, batchId, adminId: auth.session.adminId, stage, code });
     return apiError(code, 422, { requestId: id });
   }
 }

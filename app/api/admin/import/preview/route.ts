@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { databaseUnavailable, isDatabaseError } from "@/lib/database-errors";
 import { inspectExcel, parseExcel, parseMappingJson, validateExcelFile } from "@/lib/excel";
 import { DecisionMappingRepository } from "@/lib/excel/decision-mapping-repository";
+import { KnownSeriesRepository } from "@/lib/excel/known-series-repository";
 import { MappingRepository } from "@/lib/excel/mapping-repository";
 import { resolveMapping } from "@/lib/excel/mapping-service";
 import { importWorkbookInput } from "@/lib/import-request";
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
   const startedAt = Date.now();
   let stage = "request-started";
   logRequest(id, "import-preview", stage, {
+    route: "import-preview",
     contentLength: request.headers.get("content-length"),
     contentType: request.headers.get("content-type")
   });
@@ -35,6 +37,9 @@ export async function POST(request: Request) {
     stage = "workbook-input-read";
     const input = await importWorkbookInput(form, auth.session.adminId);
     logRequest(id, "import-preview", "workbook-received", {
+      route: "import-preview",
+      adminId: auth.session.adminId,
+      year: parsedYear.data.year,
       source: input.source,
       bytes: input.buffer.length,
       contentType: input.mimeType
@@ -70,7 +75,7 @@ export async function POST(request: Request) {
 
     stage = "workbook-parse";
     const decisionMappingRepository = new DecisionMappingRepository();
-    const report = await parseExcel(input.buffer, resolved.mapping, inspection, decisionMappingRepository);
+    const report = await parseExcel(input.buffer, resolved.mapping, inspection, decisionMappingRepository, new KnownSeriesRepository());
     stage = "mapping-save";
     await repository.save(inspection, resolved.mapping);
 
@@ -100,6 +105,10 @@ export async function POST(request: Request) {
       uploadId: input.uploadId
     });
     logRequest(id, "import-preview", "preview-ready", {
+      route: "import-preview",
+      adminId: auth.session.adminId,
+      year: parsedYear.data.year,
+      batchId: batch.id,
       source: input.source,
       totalRows: report.totalRows,
       validRows: report.validRows,
@@ -113,6 +122,7 @@ export async function POST(request: Request) {
       mapping: resolved.mapping,
       sheetName: inspection.sheetName,
       headerRow: inspection.headerRow,
+      sheetsScanned: inspection.sheetsScanned,
       batchId: batch.id,
       status: batch.status,
       checksum: report.checksum,
@@ -122,10 +132,13 @@ export async function POST(request: Request) {
       preview: report.preview,
       errors: errorSummary(report),
       errorCount: report.errors.length,
+      newSeries: report.newSeries,
       requestId: id
     });
   } catch (error) {
     logRequestError(id, "import-preview", "request-failed", error, {
+      route: "import-preview",
+      adminId: auth.session.adminId,
       stage,
       elapsedMs: Date.now() - startedAt
     });

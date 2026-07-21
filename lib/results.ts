@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
 import { PAGE_SIZE } from "@/lib/constants";
 import { withDatabaseRetry } from "@/lib/database-retry";
@@ -12,6 +13,18 @@ export async function getPublishedYear(requestedYear?: number) {
   );
 }
 
+/**
+ * Cached wrapper for public read paths only - never used by admin mutation code,
+ * which always needs the freshest state. Invalidated via revalidateTag("published-year")
+ * whenever a year is published/hidden/set-default/deleted, so publish events reflect
+ * immediately instead of waiting out the TTL.
+ */
+export const getPublishedYearCached = unstable_cache(
+  (requestedYear?: number) => getPublishedYear(requestedYear),
+  ["published-year-cache"],
+  { tags: ["published-year"], revalidate: 300 }
+);
+
 export async function findCandidateResult(examYearId: string, candidateNumber: string, database = db) {
   return withDatabaseRetry(
     () => database.candidate.findUnique({
@@ -20,6 +33,17 @@ export async function findCandidateResult(examYearId: string, candidateNumber: s
     }),
     "candidate-result-read"
   );
+}
+
+/** Rank within series, excluding ANNULE - mirrors the exclusion rule already used by resultWhere/browseResults. Covered by the existing @@index([examYearId, series, average]). */
+export async function getCandidateRank(examYearId: string, series: string, average: number, database = db) {
+  const ahead = await withDatabaseRetry(
+    () => database.candidate.count({
+      where: { examYearId, series, decision: { not: "ANNULE" }, average: { gt: average } }
+    }),
+    "candidate-rank-read"
+  );
+  return ahead + 1;
 }
 
 function present(values: Array<string | null>) {
@@ -64,6 +88,13 @@ export async function getFilterOptions(examYearId: string, params: { series?: st
     };
   }, "filter-options-read", { timeoutMs: 90_000 });
 }
+
+/** Cached wrapper for public read paths. Invalidated via revalidateTag("filter-options") on publish/hide/default/delete and on every completed import. */
+export const getFilterOptionsCached = unstable_cache(
+  (examYearId: string, params: { series?: string; wilaya?: string; center?: string }) => getFilterOptions(examYearId, params),
+  ["filter-options-cache"],
+  { tags: ["filter-options"], revalidate: 300 }
+);
 
 export function resultWhere(examYearId: string, filters: { series: string; wilaya: string; center: string; school: string }): Prisma.CandidateWhereInput | null {
   const rankable = { examYearId, decision: { not: "ANNULE" as const } };
@@ -111,3 +142,10 @@ export async function browseResults(examYearId: string, filters: { series: strin
     };
   }, "browse-results-read", { timeoutMs: 120_000 });
 }
+
+/** Cached wrapper for the public browse/rankings/statistics read path. Same invalidation tag as getFilterOptionsCached. */
+export const browseResultsCached = unstable_cache(
+  (examYearId: string, filters: { series: string; wilaya: string; center: string; school: string; sort: string; page: number }) => browseResults(examYearId, filters),
+  ["browse-results-cache"],
+  { tags: ["filter-options"], revalidate: 60 }
+);

@@ -15,6 +15,7 @@ export type {
   ColumnMapping,
   DetectedColumn,
   ImportReport,
+  NewSeries,
   ParsedCandidate,
   RowError,
   UnknownDecision,
@@ -22,9 +23,11 @@ export type {
 } from "@/lib/excel/types";
 export { canonicalFields, optionalFields, requiredFields } from "@/lib/excel/types";
 export type { DecisionMappingLookup } from "@/lib/excel/decision-mapping-repository";
+export type { KnownSeriesLookup } from "@/lib/excel/known-series-repository";
 
 import { importExcel } from "@/lib/excel/excel-importer";
 import type { DecisionMappingLookup } from "@/lib/excel/decision-mapping-repository";
+import type { KnownSeriesLookup } from "@/lib/excel/known-series-repository";
 import type { ColumnMapping, WorkbookInspection } from "@/lib/excel/types";
 import { MAX_UPLOAD_SIZE } from "@/lib/constants";
 
@@ -36,5 +39,10 @@ export function validateExcelFile(buffer: Buffer, fileName: string, mimeType = "
   if (buffer.length < 4 || buffer[0] !== 0x50 || buffer[1] !== 0x4b) throw new Error("INVALID_XLSX_SIGNATURE");
 }
 
-export const parseExcel = (buffer: Buffer, mapping?: ColumnMapping, inspection?: WorkbookInspection, decisionLookup?: DecisionMappingLookup) =>
-  importExcel(buffer, mapping, inspection, decisionLookup);
+export const parseExcel = (
+  buffer: Buffer,
+  mapping?: ColumnMapping,
+  inspection?: WorkbookInspection,
+  decisionLookup?: DecisionMappingLookup,
+  seriesLookup?: KnownSeriesLookup
+) => importExcel(buffer, mapping, inspection, decisionLookup, seriesLookup);

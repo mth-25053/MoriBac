@@ -5,12 +5,14 @@ import { candidateNumberText, cellText } from "@/lib/excel/cell-value";
 import { DecisionMappingRepository, type DecisionMappingLookup } from "@/lib/excel/decision-mapping-repository";
 import { HeaderDetector } from "@/lib/excel/header-detector";
 import { normalizeHeader } from "@/lib/excel/header-normalizer";
+import { KnownSeriesRepository, type KnownSeriesLookup } from "@/lib/excel/known-series-repository";
 import {
   canonicalFields,
   requiredFields,
   type CanonicalField,
   type ColumnMapping,
   type ImportReport,
+  type NewSeries,
   type ParsedCandidate,
   type RowError,
   type UnknownDecision,
@@ -142,7 +144,8 @@ export class ExcelImporter {
     buffer: Buffer,
     inputMapping?: ColumnMapping,
     knownInspection?: WorkbookInspection,
-    decisionLookup: DecisionMappingLookup = new DecisionMappingRepository()
+    decisionLookup: DecisionMappingLookup = new DecisionMappingRepository(),
+    seriesLookup: KnownSeriesLookup = new KnownSeriesRepository()
   ): Promise<ImportReport> {
     const workbook = await loadWorkbook(buffer);
     const inspection = knownInspection ?? this.detector.detect(workbook);
@@ -226,6 +229,25 @@ export class ExcelImporter {
       unknownDecisions.sort((left, right) => right.count - left.count);
     }
 
+    // Purely informational: series has always been free text with no allowlist, so a
+    // value not seen before is never rejected or deferred - just flagged for awareness.
+    // A failure here (lookup unavailable, table not migrated yet, etc.) must never break
+    // a real import over an informational nicety - it degrades to "nothing flagged."
+    const seriesCounts = new Map<string, number>();
+    for (const row of rows) seriesCounts.set(row.series, (seriesCounts.get(row.series) ?? 0) + 1);
+    const distinctSeries = [...seriesCounts.keys()];
+    let unknownSeriesValues: string[] = [];
+    if (distinctSeries.length) {
+      try {
+        unknownSeriesValues = await seriesLookup.findUnknown(distinctSeries);
+      } catch {
+        unknownSeriesValues = [];
+      }
+    }
+    const newSeries: NewSeries[] = unknownSeriesValues
+      .map((series) => ({ series, count: seriesCounts.get(series) ?? 0 }))
+      .sort((left, right) => right.count - left.count);
+
     const invalidRows = new Set(errors.map((error) => error.rowNumber)).size;
     return {
       checksum: createHash("sha256").update(buffer).digest("hex"),
@@ -236,6 +258,7 @@ export class ExcelImporter {
       rows,
       errors,
       unknownDecisions,
+      newSeries,
       inspection,
       mapping
     };
@@ -251,5 +274,10 @@ export class MappingRequiredError extends Error {
 
 const importer = new ExcelImporter();
 export const inspectExcel = (buffer: Buffer) => importer.inspect(buffer);
-export const importExcel = (buffer: Buffer, mapping?: ColumnMapping, inspection?: WorkbookInspection, decisionLookup?: DecisionMappingLookup) =>
-  importer.import(buffer, mapping, inspection, decisionLookup);
+export const importExcel = (
+  buffer: Buffer,
+  mapping?: ColumnMapping,
+  inspection?: WorkbookInspection,
+  decisionLookup?: DecisionMappingLookup,
+  seriesLookup?: KnownSeriesLookup
+) => importer.import(buffer, mapping, inspection, decisionLookup, seriesLookup);

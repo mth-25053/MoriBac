@@ -8,7 +8,7 @@ import type { AdminDictionary } from "@/lib/admin-i18n";
 import type { DecisionValue } from "@/lib/constants";
 import { csrfFromDocument } from "@/lib/csrf-client";
 import { DIRECT_UPLOAD_LIMIT, IMPORT_CHUNK_SIZE } from "@/lib/import-upload-config";
-import { canonicalFields, type CanonicalField, type ColumnMapping, type DetectedColumn, type UnknownDecision } from "@/lib/excel/types";
+import { canonicalFields, type CanonicalField, type ColumnMapping, type DetectedColumn, type NewSeries, type UnknownDecision } from "@/lib/excel/types";
 import type { Locale } from "@/lib/i18n";
 
 type Report = {
@@ -17,11 +17,14 @@ type Report = {
   checksum: string;
   mapping: ColumnMapping;
   mappingSource: "automatic" | "saved" | "manual";
+  sheetName: string;
+  sheetsScanned: number;
   totalRows: number;
   validRows: number;
   invalidRows: number;
   preview: Record<string, unknown>[];
   errors: { rowNumber: number; field?: string; message: string }[];
+  newSeries: NewSeries[];
 };
 
 type MappingRequest = {
@@ -250,7 +253,9 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
     />}
 
     {report && <section className="mt-7 space-y-5">
+      <p className="muted text-xs">{locale === "ar" ? `الورقة: ${report.sheetName} (من أصل ${report.sheetsScanned} ورقة تم فحصها)` : `Feuille : ${report.sheetName} (${report.sheetsScanned} feuille(s) analysée(s))`}</p>
       <div className="grid grid-cols-3 gap-3">{[[dict.totalRows, report.totalRows], [dict.validRows, report.validRows], [dict.invalidRows, report.invalidRows]].map(([label, value]) => <div className="surface p-4" key={label}><b className="text-2xl">{value}</b><p className="muted text-xs">{label}</p></div>)}</div>
+      {report.newSeries.length > 0 && <div className="surface p-4" role="status"><p className="font-bold">{dict.newSeriesDetected}</p><p className="muted mt-1 text-sm">{report.newSeries.map((entry) => `${entry.series} (${entry.count})`).join(" · ")}</p></div>}
       {report.errors.length > 0 && <div className="surface p-5"><h2 className="font-black text-[var(--danger)]">{dict.errors}</h2><ul className="mt-3 max-h-64 overflow-auto text-sm">{report.errors.slice(0, 100).map((error, index) => <li className="border-b py-2" style={{ borderColor: "var(--line)" }} key={index}>#{error.rowNumber} · {error.field ? previewLabel(error.field, dict, locale) : ""}: {translatedError(error.message, dict)}</li>)}</ul></div>}
       <div className="surface overflow-hidden"><h2 className="p-5 font-black">{dict.preview}</h2><div className="overflow-x-auto"><table className="min-w-full text-sm"><thead className="bg-[var(--surface-2)]"><tr>{canonicalFields.map((field) => <th className="whitespace-nowrap p-3 text-start" key={field.key}>{previewLabel(field.key, dict, locale)}</th>)}</tr></thead><tbody>{report.preview.map((row, index) => <tr className="border-t" style={{ borderColor: "var(--line)" }} key={index}>{canonicalFields.map((field) => <td className="whitespace-nowrap p-3" key={field.key}>{previewValue(field.key, row[field.key], dict)}</td>)}</tr>)}</tbody></table></div></div>
       <button className="button" disabled={report.invalidRows > 0 || loading} onClick={commit}>{loading ? "…" : dict.commit}</button>
@@ -264,7 +269,7 @@ function translatedError(message: string, dict: AdminDictionary) {
 }
 
 function translatedApiError(code: string, dict: AdminDictionary, locale: Locale) {
-  const messages: Record<string, string> = { INVALID_FILE_TYPE: dict.invalidFile, INVALID_XLSX_SIGNATURE: dict.invalidFile, INVALID_EXCEL_FILE: dict.invalidFile, FILE_SIZE: dict.invalidFile, FUNCTION_PAYLOAD_TOO_LARGE: locale === "ar" ? "حجم الملف يتجاوز حد الرفع المباشر. اعد المحاولة باستخدام الرفع الامن." : "Le fichier depasse la limite directe. Reessayez avec envoi securise.", UPLOAD_FAILED: dict.serviceUnavailable, INVALID_SERVER_RESPONSE: dict.serviceUnavailable, DUPLICATE_FILE: dict.duplicateFile, FILE_CHANGED_AFTER_PREVIEW: dict.fileChanged, IMPORT_TRANSACTION_FAILED: dict.importFailed, SERVICE_UNAVAILABLE: dict.serviceUnavailable, DATABASE_CONNECTION_FAILED: locale === "ar" ? "تعذر الاتصال بقاعدة البيانات بعد ثلاث محاولات. أعد المحاولة بعد لحظات." : "Connexion à la base impossible après trois tentatives. Réessayez dans quelques instants.", DATABASE_SCHEMA_ERROR: locale === "ar" ? "مخطط قاعدة البيانات غير جاهز. تحقق من الترحيلات." : "Le schéma de la base n’est pas prêt. Vérifiez les migrations.", INVALID_COLUMN_MAPPING: locale === "ar" ? "مطابقة الأعمدة غير صالحة" : "La correspondance des colonnes est invalide", MAPPING_REQUIRED: locale === "ar" ? "يجب إكمال مطابقة الأعمدة" : "La correspondance des colonnes doit être complétée" };
+  const messages: Record<string, string> = { INVALID_FILE_TYPE: dict.invalidFile, INVALID_XLSX_SIGNATURE: dict.invalidFile, INVALID_EXCEL_FILE: dict.invalidFile, FILE_SIZE: dict.invalidFile, FUNCTION_PAYLOAD_TOO_LARGE: locale === "ar" ? "حجم الملف يتجاوز حد الرفع المباشر. اعد المحاولة باستخدام الرفع الامن." : "Le fichier depasse la limite directe. Reessayez avec envoi securise.", UPLOAD_FAILED: dict.serviceUnavailable, INVALID_SERVER_RESPONSE: dict.serviceUnavailable, DUPLICATE_FILE: dict.duplicateFile, FILE_CHANGED_AFTER_PREVIEW: dict.fileChanged, IMPORT_TRANSACTION_FAILED: dict.importFailed, SERVICE_UNAVAILABLE: dict.serviceUnavailable, DATABASE_CONNECTION_FAILED: locale === "ar" ? "تعذر الاتصال بقاعدة البيانات بعد ثلاث محاولات. أعد المحاولة بعد لحظات." : "Connexion à la base impossible après trois tentatives. Réessayez dans quelques instants.", DATABASE_SCHEMA_ERROR: locale === "ar" ? "مخطط قاعدة البيانات غير جاهز. تحقق من الترحيلات." : "Le schéma de la base n’est pas prêt. Vérifiez les migrations.", INVALID_COLUMN_MAPPING: locale === "ar" ? "مطابقة الأعمدة غير صالحة" : "La correspondance des colonnes est invalide", MAPPING_REQUIRED: locale === "ar" ? "يجب إكمال مطابقة الأعمدة" : "La correspondance des colonnes doit être complétée", NO_SHEETS_FOUND: locale === "ar" ? "لا يحتوي الملف على أي ورقة عمل." : "Le fichier ne contient aucune feuille de calcul.", NO_HEADER_ROW_DETECTED: locale === "ar" ? "تعذر العثور على صف عناوين في أي من أوراق الملف." : "Aucune ligne d’en-têtes n’a été détectée dans les feuilles du fichier." };
   return messages[code] || dict.importFailed;
 }
 

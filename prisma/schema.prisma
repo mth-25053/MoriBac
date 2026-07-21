@@ -100,6 +100,8 @@ model Candidate {
   @@index([examYearId, series, average])
   @@index([examYearId, examCenter])
   @@index([examYearId, school])
+  @@index([examYearId, decision])
+  @@index([examYearId, wilaya])
 }
 
 model ImportBatch {
@@ -174,4 +176,24 @@ model LoginThrottle {
   windowStart  DateTime  @default(now())
   blockedUntil DateTime?
   updatedAt    DateTime  @updatedAt
+}
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  adminId       String
+  action        String
+  targetType    String
+  targetId      String?
+  previousValue Json?
+  newValue      Json?
+  ip            String?
+  createdAt     DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([targetType, targetId])
+}
+
+model KnownSeries {
+  code      String   @id
+  createdAt DateTime @default(now())
 }

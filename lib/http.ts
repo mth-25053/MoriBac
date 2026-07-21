@@ -3,10 +3,12 @@ import { readSession, validateCsrf } from "@/lib/auth";
 import { databaseUnavailable } from "@/lib/database-errors";
 import { withDatabaseRetry } from "@/lib/database-retry";
 import { db } from "@/lib/db";
+import { recordServerError } from "@/lib/monitoring";
 import { assertSameOrigin } from "@/lib/security";
 
 export function apiError(message: string, status = 400, details?: unknown) {
-  return NextResponse.json({ error: message, details }, { status });
+  if (status >= 500) recordServerError(message, status);
+  return NextResponse.json({ error: message, details }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
 export async function authorizeMutation(request: Request, requestId?: string) {

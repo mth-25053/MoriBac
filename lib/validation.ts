@@ -25,15 +25,19 @@ export const yearSchema = z.object({ year: z.coerce.number().int().min(2000).max
 export const settingsSchema = z.object({
   siteNoticeAr: z.string().trim().max(500),
   siteNoticeFr: z.string().trim().max(500)
-});
+}).strict();
 
 export const decisionMappingCreateSchema = z.object({
   rawValue: z.string().trim().min(1).max(200),
   decision: z.enum(DECISIONS)
-});
+}).strict();
 
 export const decisionMappingUpdateSchema = z.object({
   decision: z.enum(DECISIONS)
-});
+}).strict();
 
-export const importActionSchema = z.object({ action: z.literal("complete") });
+export const importActionSchema = z.object({ action: z.literal("complete") }).strict();
+
+export const knownSeriesCreateSchema = z.object({
+  code: z.string().trim().min(1).max(100)
+}).strict();

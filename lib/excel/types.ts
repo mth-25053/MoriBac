@@ -35,6 +35,7 @@ export type WorkbookInspection = {
   suggestedMapping: ColumnMapping;
   confidence: Partial<Record<CanonicalField, number>>;
   unresolvedRequired: CanonicalField[];
+  sheetsScanned: number;
 };
 
 export type ParsedCandidate = {
@@ -65,6 +66,11 @@ export type UnknownDecision = {
   count: number;
 };
 
+export type NewSeries = {
+  series: string;
+  count: number;
+};
+
 export type ImportReport = {
   checksum: string;
   totalRows: number;
@@ -74,6 +80,7 @@ export type ImportReport = {
   rows: ParsedCandidate[];
   errors: RowError[];
   unknownDecisions: UnknownDecision[];
+  newSeries: NewSeries[];
   inspection: WorkbookInspection;
   mapping: ColumnMapping;
 };
