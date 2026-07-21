@@ -3,17 +3,36 @@ import { canonicalFields } from "@/lib/excel/types";
 import { normalizeHeader } from "@/lib/excel/header-normalizer";
 
 const aliases: Record<CanonicalField, string[]> = {
-  candidateNumber: ["CANDIDATE NUMBER", "CANDIDATE NO", "CANDIDATE ID", "ROLL NUMBER", "ROLL NO", "REGISTRATION NUMBER", "MATRICULE", "NUMBAC", "NUM BAC", "NUMERO BAC", "NUMERO CANDIDAT", "N° CANDIDAT", "NO CANDIDAT", "رقم المترشح"],
-  fullName: ["FULL NAME", "CANDIDATE NAME", "NAME", "NOM", "NOM COMPLET", "NOM ET PRENOM", "NOM PRENOM", "الاسم الكامل", "اسم المترشح"],
-  series: ["SERIES", "SERIE", "STREAM", "SECTION", "BRANCH", "FILIERE", "الشعبة"],
-  average: ["AVERAGE", "FINAL AVERAGE", "SCORE", "MARK", "MOYENNE", "MOY BAC", "MOYBAC", "MOYENNE BAC", "المعدل"],
-  decision: ["DECISION", "RESULT", "RESULTAT", "STATUS", "OUTCOME", "VERDICT", "القرار", "النتيجة"],
-  wilaya: ["WILAYA", "REGION", "STATE", "PROVINCE", "GOVERNORATE", "الولاية", "ولاية"],
-  examCenter: ["EXAM CENTER", "EXAMINATION CENTER", "CENTER", "CENTRE", "CENTRE EXAMEN", "CENTRE D EXAMEN", "CENTREEXAMEN", "مركز الامتحان"],
-  school: ["SCHOOL", "ESTABLISHMENT", "ETABLISSEMENT", "ECOLE", "LYCEE", "INSTITUTION", "ORIGIN SCHOOL", "المؤسسة", "المدرسة"],
-  birthDate: ["BIRTH DATE", "DATE OF BIRTH", "DOB", "DATE NAISSANCE", "DATE DE NAISSANCE", "تاريخ الميلاد"],
-  birthPlace: ["BIRTH PLACE", "PLACE OF BIRTH", "LIEU NAISSANCE", "LIEU DE NAISSANCE", "مكان الميلاد"],
-  candidateType: ["CANDIDATE TYPE", "TYPE CANDIDATE", "TYPE CANDIDAT", "TYPECANDIDAT", "CANDIDATURE TYPE", "CATEGORY", "CATEGORIE", "نوع المترشح"]
+  candidateNumber: [
+    "CANDIDATE NUMBER", "CANDIDATE NO", "CANDIDATE ID", "ROLL NUMBER", "ROLL NO", "REGISTRATION NUMBER", "MATRICULE",
+    "NUMBAC", "NUM BAC", "N BAC", "NUMERO BAC", "NUMERO CANDIDAT", "NUMERO DU CANDIDAT", "N° CANDIDAT", "NO CANDIDAT",
+    "CODE CANDIDAT", "IDENTIFIANT CANDIDAT", "رقم المترشح", "رقم الترشح", "رقم التسجيل", "رمز المترشح"
+  ],
+  fullName: [
+    "FULL NAME", "CANDIDATE NAME", "CANDIDATE FULL NAME", "NAME", "NOM", "NOM COMPLET", "NOM ET PRENOM", "NOM PRENOM",
+    "NOM DU CANDIDAT", "NOM ET PRENOMS", "PRENOM ET NOM", "الاسم الكامل", "الإسم الكامل", "اسم المترشح"
+  ],
+  series: ["SERIES", "SERIE", "STREAM", "SECTION", "BRANCH", "FILIERE", "TYPE SERIE", "SPECIALITE", "الشعبة", "شعبة المترشح"],
+  average: [
+    "AVERAGE", "FINAL AVERAGE", "AVERAGE SCORE", "SCORE", "MARK", "MOYENNE", "MOY BAC", "MOYBAC", "MOYENNE BAC",
+    "MOYENNE GENERALE", "MOYENNE FINALE", "NOTE FINALE", "المعدل", "المعدل العام", "معدل الباكالوريا"
+  ],
+  decision: ["DECISION", "RESULT", "RESULTAT", "DECISION FINALE", "RESULTAT FINAL", "STATUS", "OUTCOME", "VERDICT", "MENTION", "القرار", "النتيجة", "نتيجة الامتحان"],
+  wilaya: ["WILAYA", "REGION", "STATE", "PROVINCE", "GOVERNORATE", "الولاية", "ولاية", "الجهة"],
+  examCenter: [
+    "EXAM CENTER", "EXAMINATION CENTER", "CENTER", "CENTRE", "CENTRE EXAMEN", "CENTRE D EXAMEN", "CENTREEXAMEN",
+    "LIEU EXAMEN", "مركز الامتحان", "مركز الاختبار"
+  ],
+  school: [
+    "SCHOOL", "ESTABLISHMENT", "ETABLISSEMENT", "ETABLISSEMENT ORIGINE", "ECOLE", "ECOLE ORIGINE", "LYCEE",
+    "INSTITUTION", "ORIGIN SCHOOL", "المؤسسة", "المدرسة", "المؤسسة الأصلية"
+  ],
+  birthDate: ["BIRTH DATE", "DATE OF BIRTH", "DOB", "DATE NAISSANCE", "DATE DE NAISSANCE", "DATE NAISS", "تاريخ الميلاد", "تاريخ الازدياد"],
+  birthPlace: ["BIRTH PLACE", "PLACE OF BIRTH", "LIEU NAISSANCE", "LIEU DE NAISSANCE", "LIEU NAISS", "مكان الميلاد", "محل الميلاد"],
+  candidateType: [
+    "CANDIDATE TYPE", "TYPE CANDIDATE", "TYPE CANDIDAT", "TYPECANDIDAT", "CANDIDATURE TYPE", "NATURE CANDIDAT",
+    "STATUT CANDIDAT", "CATEGORY", "CATEGORIE", "نوع المترشح", "صفة المترشح"
+  ]
 };
 
 const normalizedAliases = Object.fromEntries(

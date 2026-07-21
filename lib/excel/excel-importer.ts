@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { DECISIONS, MAX_UPLOAD_SIZE, type DecisionValue } from "@/lib/constants";
 import { candidateNumberText, cellText } from "@/lib/excel/cell-value";
 import { HeaderDetector } from "@/lib/excel/header-detector";
+import { normalizeHeader } from "@/lib/excel/header-normalizer";
 import {
   canonicalFields,
   requiredFields,
@@ -23,10 +24,6 @@ function optionalText(value: string) {
   return cleaned || null;
 }
 
-function normalizeValue(value: unknown) {
-  return String(value ?? "").normalize("NFD").replace(/\p{M}/gu, "").trim().toUpperCase().replace(/[^\p{L}\p{N}]/gu, "");
-}
-
 function isCancellationDecision(key: string) {
   const arabicExam = "\u0627\u0645\u062a\u062d\u0627\u0646";
   const arabicCancelled = "\u0645\u0644\u063a";
@@ -39,7 +36,7 @@ function isCancellationDecision(key: string) {
     || key.startsWith("CANCELLED");
 }
 function mapDecision(value: string): DecisionValue | null {
-  const key = normalizeValue(value);
+  const key = normalizeHeader(value);
   const values: Record<string, DecisionValue> = {
     ADMIS: "ADMIS",
     ADMITTED: "ADMIS",

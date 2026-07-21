@@ -106,6 +106,20 @@ describe("schema-independent Excel validation", () => {
     expect(report.invalidRows).toBe(0);
     expect(report.rows.map((row) => row.decision)).toEqual(decisions.map(() => "ANNULE"));
   });
+  it("auto-recognizes a future workbook with reordered columns, Arabic headers, and full-width Arabic decision text", async () => {
+    const buffer = await workbook([
+      ["رقم الترشح", "الاسم الكامل", "المعدل العام", "شعبة المترشح", "نتيجة الامتحان", "الجهة", "مركز الاختبار", "المؤسسة الأصلية"],
+      ["00010", "خديجة محمد", 12.4, "SN", "ناجح", "Trarza", "Centre A", "Lycee A"],
+      ["00011", "أحمد سالم", 5.5, "M", "راسب", "Adrar", "Centre C", "Lycee C"]
+    ]);
+    const inspection = await inspectExcel(buffer);
+    expect(inspection.unresolvedRequired).toEqual([]);
+    const report = await parseExcel(buffer, undefined, inspection);
+    expect(report.invalidRows).toBe(0);
+    expect(report.rows.map((row) => row.decision)).toEqual(["ADMIS", "REDOUBLE"]);
+    expect(report.rows[0]).toMatchObject({ candidateNumber: "00010", fullName: "خديجة محمد", series: "SN", wilaya: "Trarza", school: "Lycee A" });
+  });
+
   it("requests mapping instead of rejecting unknown required columns, then imports with manual mapping", async () => {
     const buffer = await workbook([
       ["Code X", "Identity X", "Branch X", "Grade X", "Outcome X", "Extra X"],

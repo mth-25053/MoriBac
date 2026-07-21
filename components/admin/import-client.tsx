@@ -186,7 +186,7 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
         <label><span className="label">{dict.examYear}</span><input className="field" type="number" min="2000" max="2100" value={year} onChange={(event) => { setYear(Number(event.target.value)); resetResult(); }} /></label>
         <label><span className="label">{dict.file}</span><input className="field file:me-3 file:rounded-lg file:border-0 file:bg-[var(--accent-soft)] file:px-3 file:py-1 file:font-bold" type="file" accept=".xlsx" onChange={(event) => { uploadRef.current = null; setFile(event.target.files?.[0] || null); resetResult(); }} /></label>
       </div>
-      <button className="button mt-5" disabled={!file || loading} onClick={() => preview()}>{loading ? "â€¦" : dict.validate}</button>
+      <button className="button mt-5" disabled={!file || loading} onClick={() => preview()}>{loading ? "…" : dict.validate}</button>
     </section>
 
     {mappingRequest && <MappingWizard
@@ -202,9 +202,9 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
 
     {report && <section className="mt-7 space-y-5">
       <div className="grid grid-cols-3 gap-3">{[[dict.totalRows, report.totalRows], [dict.validRows, report.validRows], [dict.invalidRows, report.invalidRows]].map(([label, value]) => <div className="surface p-4" key={label}><b className="text-2xl">{value}</b><p className="muted text-xs">{label}</p></div>)}</div>
-      {report.errors.length > 0 && <div className="surface p-5"><h2 className="font-black text-[var(--danger)]">{dict.errors}</h2><ul className="mt-3 max-h-64 overflow-auto text-sm">{report.errors.slice(0, 100).map((error, index) => <li className="border-b py-2" style={{ borderColor: "var(--line)" }} key={index}>#{error.rowNumber} آ· {error.field ? previewLabel(error.field, dict, locale) : ""}: {translatedError(error.message, dict)}</li>)}</ul></div>}
+      {report.errors.length > 0 && <div className="surface p-5"><h2 className="font-black text-[var(--danger)]">{dict.errors}</h2><ul className="mt-3 max-h-64 overflow-auto text-sm">{report.errors.slice(0, 100).map((error, index) => <li className="border-b py-2" style={{ borderColor: "var(--line)" }} key={index}>#{error.rowNumber} · {error.field ? previewLabel(error.field, dict, locale) : ""}: {translatedError(error.message, dict)}</li>)}</ul></div>}
       <div className="surface overflow-hidden"><h2 className="p-5 font-black">{dict.preview}</h2><div className="overflow-x-auto"><table className="min-w-full text-sm"><thead className="bg-[var(--surface-2)]"><tr>{canonicalFields.map((field) => <th className="whitespace-nowrap p-3 text-start" key={field.key}>{previewLabel(field.key, dict, locale)}</th>)}</tr></thead><tbody>{report.preview.map((row, index) => <tr className="border-t" style={{ borderColor: "var(--line)" }} key={index}>{canonicalFields.map((field) => <td className="whitespace-nowrap p-3" key={field.key}>{previewValue(field.key, row[field.key], dict)}</td>)}</tr>)}</tbody></table></div></div>
-      <button className="button" disabled={report.invalidRows > 0 || loading} onClick={commit}>{loading ? "â€¦" : dict.commit}</button>
+      <button className="button" disabled={report.invalidRows > 0 || loading} onClick={commit}>{loading ? "…" : dict.commit}</button>
     </section>}
   </div>;
 }
@@ -215,7 +215,7 @@ function translatedError(message: string, dict: AdminDictionary) {
 }
 
 function translatedApiError(code: string, dict: AdminDictionary, locale: Locale) {
-  const messages: Record<string, string> = { INVALID_FILE_TYPE: dict.invalidFile, INVALID_XLSX_SIGNATURE: dict.invalidFile, INVALID_EXCEL_FILE: dict.invalidFile, FILE_SIZE: dict.invalidFile, FUNCTION_PAYLOAD_TOO_LARGE: locale === "ar" ? "حجم الملف يتجاوز حد الرفع المباشر. اعد المحاولة باستخدام الرفع الامن." : "Le fichier depasse la limite directe. Reessayez avec envoi securise.", UPLOAD_FAILED: dict.serviceUnavailable, INVALID_SERVER_RESPONSE: dict.serviceUnavailable, DUPLICATE_FILE: dict.duplicateFile, FILE_CHANGED_AFTER_PREVIEW: dict.fileChanged, IMPORT_TRANSACTION_FAILED: dict.importFailed, SERVICE_UNAVAILABLE: dict.serviceUnavailable, DATABASE_CONNECTION_FAILED: locale === "ar" ? "تعذر الاتصال بقاعدة البيانات بعد ثلاث محاولات. أعد المحاولة بعد لحظات." : "Connexion à la base impossible après trois tentatives. Réessayez dans quelques instants.", DATABASE_SCHEMA_ERROR: locale === "ar" ? "مخطط قاعدة البيانات غير جاهز. تحقق من الترحيلات." : "Le schéma de la base n’est pas prêt. Vérifiez les migrations.", INVALID_COLUMN_MAPPING: locale === "ar" ? "ظ…ط·ط§ط¨ظ‚ط© ط§ظ„ط£ط¹ظ…ط¯ط© ط؛ظٹط± طµط§ظ„ط­ط©" : "La correspondance des colonnes est invalide", MAPPING_REQUIRED: locale === "ar" ? "ظٹط¬ط¨ ط¥ظƒظ…ط§ظ„ ظ…ط·ط§ط¨ظ‚ط© ط§ظ„ط£ط¹ظ…ط¯ط©" : "La correspondance des colonnes doit أھtre complأ©tأ©e" };
+  const messages: Record<string, string> = { INVALID_FILE_TYPE: dict.invalidFile, INVALID_XLSX_SIGNATURE: dict.invalidFile, INVALID_EXCEL_FILE: dict.invalidFile, FILE_SIZE: dict.invalidFile, FUNCTION_PAYLOAD_TOO_LARGE: locale === "ar" ? "حجم الملف يتجاوز حد الرفع المباشر. اعد المحاولة باستخدام الرفع الامن." : "Le fichier depasse la limite directe. Reessayez avec envoi securise.", UPLOAD_FAILED: dict.serviceUnavailable, INVALID_SERVER_RESPONSE: dict.serviceUnavailable, DUPLICATE_FILE: dict.duplicateFile, FILE_CHANGED_AFTER_PREVIEW: dict.fileChanged, IMPORT_TRANSACTION_FAILED: dict.importFailed, SERVICE_UNAVAILABLE: dict.serviceUnavailable, DATABASE_CONNECTION_FAILED: locale === "ar" ? "تعذر الاتصال بقاعدة البيانات بعد ثلاث محاولات. أعد المحاولة بعد لحظات." : "Connexion à la base impossible après trois tentatives. Réessayez dans quelques instants.", DATABASE_SCHEMA_ERROR: locale === "ar" ? "مخطط قاعدة البيانات غير جاهز. تحقق من الترحيلات." : "Le schéma de la base n’est pas prêt. Vérifiez les migrations.", INVALID_COLUMN_MAPPING: locale === "ar" ? "مطابقة الأعمدة غير صالحة" : "La correspondance des colonnes est invalide", MAPPING_REQUIRED: locale === "ar" ? "يجب إكمال مطابقة الأعمدة" : "La correspondance des colonnes doit être complétée" };
   return messages[code] || dict.importFailed;
 }
 
@@ -227,5 +227,5 @@ function previewLabel(key: string, dict: AdminDictionary, locale: Locale) {
 function previewValue(key: string, value: unknown, dict: AdminDictionary) {
   if (key === "decision" && typeof value === "string" && value in dict.decisions) return dict.decisions[value as keyof typeof dict.decisions];
   if (key === "average" && typeof value === "number") return value.toFixed(2);
-  return value == null || value === "" ? "â€”" : String(value);
+  return value == null || value === "" ? "—" : String(value);
 }

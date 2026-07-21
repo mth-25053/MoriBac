@@ -4,6 +4,8 @@ MoriBac is a bilingual Arabic/French platform for importing, reviewing, publishi
 
 Arabic is the default locale. Public visitors do not need accounts; only administrators can access import and publication workflows.
 
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a full description of the request flow, data model, Excel import pipeline, and security model.
+
 ## Prerequisites
 
 - Node.js 22 or newer
@@ -97,7 +99,7 @@ Summary:
 - Decisions: `ADMIS`, `SESSIONNAIRE`, `REDOUBLE`, `ABSENT`, `ANNULE`
 - SHA-256: `335511ae00b5907683562a783b34e1247c0d781ab078ab7d27a2d5ddd9dbbb7a`
 
-The importer is schema-independent. It detects the header row within the first 50 rows of every worksheet, normalizes headings by removing accents, whitespace, underscores, and punctuation, then applies aliases and fuzzy matching. `BAC2025.xlsx` is one verified format, not a hard-coded schema.
+The importer is schema-independent and future-proof: it never hard-codes a column position, sheet name, or year. It detects the header row within the first 50 rows of every worksheet, normalizes headings by removing accents, whitespace, underscores, and punctuation, then applies a broad English/French/Arabic alias list plus fuzzy (Levenshtein) matching. `BAC2025.xlsx` is one verified format, not a hard-coded schema — the same pipeline auto-recognizes future workbooks whose columns are reordered, renamed, added, removed, or written in a different language or capitalization, and only falls back to the manual **Mapping Wizard** when a required field cannot be identified with enough confidence. See [ARCHITECTURE.md](ARCHITECTURE.md#excel-import-pipeline) for the full pipeline.
 
 ## Import workflow
 
@@ -132,9 +134,9 @@ Expected public values:
 - Name: `[REDACTED CANDIDATE NAME]`
 - Series: `M`
 - Average: `8.47 /20`
-- Decision: `SESSIONNAIRE` (Arabic: `ط·آ§ط¸â€‍ط·آ¯ط¸ث†ط·آ±ط·آ© ط·آ§ط¸â€‍ط·ع¾ط¸ئ’ط¸â€¦ط¸ظ¹ط¸â€‍ط¸ظ¹ط·آ©`; French: `Session complط£آ©mentaire`)
+- Decision: `SESSIONNAIRE` (Arabic: `الدورة التكميلية`; French: `Session complémentaire`)
 - Wilaya: `Trarza`
-- Center: `Lycط£آ©e Rosso`
+- Center: `Lycée Rosso`
 - School: `Rosso Candidat Libre`
 
 Birth date and birth place must not be present in the public response.
@@ -148,8 +150,16 @@ Birth date and birth place must not be present in the public response.
 - database-backed failed-login throttling
 - server-side protected admin layout and API authorization
 - administrator existence rechecked for every privileged mutation
-- security headers, CSP, frame denial, content-type protection, and restricted permissions
+- security headers: CSP, frame denial (`X-Frame-Options: DENY`), content-type protection, restricted `Permissions-Policy`, HSTS (`Strict-Transport-Security`), `Cross-Origin-Opener-Policy`, and `Cross-Origin-Resource-Policy`
 - no public birth fields and no Excel parsing during searches
+
+## SEO
+
+- Per-page metadata (title template, description, canonical URL) plus Open Graph and Twitter card tags on every page.
+- `WebSite` structured data (JSON-LD, schema.org) describing MoriBac accurately as an independent results platform.
+- `app/robots.ts` allows public pages and disallows `/admin/` and every `/api/*` route (JSON endpoints have no indexable content).
+- `app/sitemap.ts` lists indexable pages with `lastModified` for freshness signals.
+- Arabic is served as the default `<html lang>`/`dir="rtl"` on first paint (no client-side flash), with `og:locale`/`og:locale:alternate` declaring both languages. The site uses one cookie-selected locale per URL rather than per-locale routes, so no `hreflang` alternates are declared — that would require separate `/ar`/`/fr` URLs, a routing change out of scope for this pass (see ARCHITECTURE.md).
 
 ## Verification commands
 
@@ -163,7 +173,7 @@ npm audit --audit-level=low
 npm run excel:analyze
 ```
 
-The test suite includes multiple unrelated workbook layouts, automatic header-row detection, normalization, alias/fuzzy matching, manual mapping, saved-mapping reuse, nullable optional fields, the full official workbook parse, leading-zero preservation, duplicate candidates/files, browse priority, pagination, admin protection, translations, and formatting.
+The test suite includes multiple unrelated workbook layouts (including a fully reordered, Arabic-header, future-workbook simulation), automatic header-row detection, normalization, alias/fuzzy matching, manual mapping, saved-mapping reuse, nullable optional fields, the full official workbook parse, leading-zero preservation, duplicate candidates/files, browse priority, pagination, admin protection, translations, and formatting.
 
 ## Supabase and Vercel deployment
 

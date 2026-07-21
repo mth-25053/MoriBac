@@ -34,7 +34,7 @@ The pre-change evidence and gaps are preserved in [AUDIT_REPORT.md](AUDIT_REPORT
 - Added protected transactional batch undo, including candidate/error deletion and cleanup of an empty draft year; published years must be hidden first.
 - Corrected exact public priority: school, then center, then average-descending series Top 10.
 - Prevented wilaya-only selection from changing Top 10 and stopped series from restricting center choices.
-- Made dependent filter loading incremental: series ط£آ¢أ¢â‚¬آ أ¢â‚¬â„¢ wilaya ط£آ¢أ¢â‚¬آ أ¢â‚¬â„¢ centers in wilaya ط£آ¢أ¢â‚¬آ أ¢â‚¬â„¢ schools in center.
+- Made dependent filter loading incremental: series → wilaya → centers in wilaya → schools in center.
 - Restricted detailed sorting to center/school mode and kept Top 10 permanently average-descending.
 - Added explicit localized public database/network error and retry states.
 - Connected localized site notices from administrator settings to the public homepage without locale-unsafe shared caching.
@@ -147,7 +147,7 @@ Expected fields include:
 - `average`: `8.47`
 - `decision`: `SESSIONNAIRE`
 - `wilaya`: `Trarza`
-- `examCenter`: `Lycط·آ£ط¢آ©e Rosso`
+- `examCenter`: `Lycée Rosso`
 - `school`: `Rosso Candidat Libre`
 
 The response must not contain birth date or birth place.
@@ -158,3 +158,16 @@ The response must not contain birth date or birth place.
 - The official import is intentionally a long-running administrator operation. The route requests up to 300 seconds; confirm the Vercel plan supports the duration/memory needed for 53,148 Excel rows, or run the same application/import against PostgreSQL from a controlled Node host.
 - No full browser automation package is installed. Responsive layout, semantic structure, focus styles, cookie-driven French/LTR/dark rendering, and reduced-motion CSS were inspected/smoke-tested, but a final screen-reader and physical-device pass is still recommended.
 - Import history displays the latest 100 batches; the specification does not require history pagination, but it may be useful after many years.
+
+## 2026-07-21 stabilization pass
+
+A maintenance pass to prepare the project for a stable production release, without changing any business rule, feature, or authentication behavior:
+
+- Fixed a stray uncommitted typo in `scripts/check-env.ts` (`DIREzCT_URL`) that would have silently disabled `DIRECT_URL` validation.
+- Fixed mojibake (double-encoded UTF-8) in `components/admin/import-client.tsx` (garbled Arabic/French error strings, ellipsis, dash, and separator characters) and in this file and `README.md` (garbled example output).
+- Deduplicated the accent/diacritic normalization logic: `lib/excel/excel-importer.ts` now reuses `HeaderNormalizer.normalize` instead of an identical private copy.
+- Broadened the Excel column-alias list (`lib/excel/alias-matcher.ts`) with more English/French/Arabic synonyms per field, purely additively — existing saved mappings (keyed by structure hash) are unaffected. Added a regression test proving a brand-new, reordered, Arabic-header workbook layout is auto-recognized without a manual mapping.
+- Added SEO metadata: canonical URLs, Open Graph `siteName`/`url`, Twitter card, `WebSite` structured data (JSON-LD), keywords, `robots.ts` `host` field and full `/api/*` disallow, and `lastModified` in `sitemap.ts`.
+- Added security headers that don't affect authentication or app behavior: HSTS, `X-DNS-Prefetch-Control`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`, and an explicit `object-src 'none'` in the CSP.
+- Added `ARCHITECTURE.md` documenting the request flow, data model, Excel pipeline, ranking rules, security model, and i18n model.
+- Verified `typecheck`, `lint` (zero warnings), the full test suite (43/43, up from 42), `npm run build`, `npm run env:check`, and `npm audit` (0 vulnerabilities) all pass after every change.
