@@ -80,6 +80,20 @@ describe("schema-independent Excel validation", () => {
     expect(report.invalidRows).toBe(0);
     expect(report.rows.map((row) => row.decision)).toEqual(["ADMIS", "REDOUBLE", "ABSENT"]);
   });
+  it("recognizes a single workbook mixing Arabic and French headers with capitalization and punctuation variation", async () => {
+    const buffer = await workbook([
+      ["N°.-Candidat", "nom_complet", "شعبة", "moy.bac", "القرار", "Wilaya", "مركز الامتحان", "Établissement !"],
+      ["00042", "Fatimetou Mint Ahmed", "LM", 15.2, "ADMIS", "Adrar", "Centre Atar", "Lycée Atar"],
+      ["00043", "Sidi Mohamed", "LO", "9,80", "راسب", "Adrar", "Centre Atar", "Lycée Atar"]
+    ]);
+    const inspection = await inspectExcel(buffer);
+    expect(inspection.unresolvedRequired).toEqual([]);
+    const report = await parseExcel(buffer, undefined, inspection);
+    expect(report.invalidRows).toBe(0);
+    expect(report.rows.map((row) => row.decision)).toEqual(["ADMIS", "REDOUBLE"]);
+    expect(report.rows[0]).toMatchObject({ candidateNumber: "00042", series: "LM", wilaya: "Adrar", examCenter: "Centre Atar", school: "Lycée Atar" });
+  });
+
   it("recognizes Arabic BAC cancellation decisions", async () => {
     const decisions = ["إلغاء الامتحان", "امتحانه ملغى", "امتحان ملغى", "ملغى"];
     const buffer = await workbook([

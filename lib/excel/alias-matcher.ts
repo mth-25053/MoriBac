@@ -10,22 +10,22 @@ const aliases: Record<CanonicalField, string[]> = {
   ],
   fullName: [
     "FULL NAME", "CANDIDATE NAME", "CANDIDATE FULL NAME", "NAME", "NOM", "NOM COMPLET", "NOM ET PRENOM", "NOM PRENOM",
-    "NOM DU CANDIDAT", "NOM ET PRENOMS", "PRENOM ET NOM", "الاسم الكامل", "الإسم الكامل", "اسم المترشح"
+    "NOM DU CANDIDAT", "NOM ET PRENOMS", "PRENOM ET NOM", "الاسم الكامل", "الإسم الكامل", "اسم المترشح", "اسم كامل"
   ],
-  series: ["SERIES", "SERIE", "STREAM", "SECTION", "BRANCH", "FILIERE", "TYPE SERIE", "SPECIALITE", "الشعبة", "شعبة المترشح"],
+  series: ["SERIES", "SERIE", "STREAM", "SECTION", "BRANCH", "FILIERE", "TYPE SERIE", "SPECIALITE", "الشعبة", "شعبة", "شعبة المترشح"],
   average: [
     "AVERAGE", "FINAL AVERAGE", "AVERAGE SCORE", "SCORE", "MARK", "MOYENNE", "MOY BAC", "MOYBAC", "MOYENNE BAC",
-    "MOYENNE GENERALE", "MOYENNE FINALE", "NOTE FINALE", "المعدل", "المعدل العام", "معدل الباكالوريا"
+    "MOYENNE GENERALE", "MOYENNE FINALE", "NOTE FINALE", "المعدل", "معدل", "المعدل العام", "معدل الباكالوريا"
   ],
-  decision: ["DECISION", "RESULT", "RESULTAT", "DECISION FINALE", "RESULTAT FINAL", "STATUS", "OUTCOME", "VERDICT", "MENTION", "القرار", "النتيجة", "نتيجة الامتحان"],
+  decision: ["DECISION", "RESULT", "RESULTAT", "DECISION FINALE", "RESULTAT FINAL", "STATUS", "OUTCOME", "VERDICT", "MENTION", "القرار", "قرار", "النتيجة", "نتيجة الامتحان"],
   wilaya: ["WILAYA", "REGION", "STATE", "PROVINCE", "GOVERNORATE", "الولاية", "ولاية", "الجهة"],
   examCenter: [
     "EXAM CENTER", "EXAMINATION CENTER", "CENTER", "CENTRE", "CENTRE EXAMEN", "CENTRE D EXAMEN", "CENTREEXAMEN",
-    "LIEU EXAMEN", "مركز الامتحان", "مركز الاختبار"
+    "LIEU EXAMEN", "مركز الامتحان", "مركز الاختبار", "مركز"
   ],
   school: [
     "SCHOOL", "ESTABLISHMENT", "ETABLISSEMENT", "ETABLISSEMENT ORIGINE", "ECOLE", "ECOLE ORIGINE", "LYCEE",
-    "INSTITUTION", "ORIGIN SCHOOL", "المؤسسة", "المدرسة", "المؤسسة الأصلية"
+    "INSTITUTION", "ORIGIN SCHOOL", "المؤسسة", "مؤسسة", "المدرسة", "مدرسة", "المؤسسة الأصلية"
   ],
   birthDate: ["BIRTH DATE", "DATE OF BIRTH", "DOB", "DATE NAISSANCE", "DATE DE NAISSANCE", "DATE NAISS", "تاريخ الميلاد", "تاريخ الازدياد"],
   birthPlace: ["BIRTH PLACE", "PLACE OF BIRTH", "LIEU NAISSANCE", "LIEU DE NAISSANCE", "LIEU NAISS", "مكان الميلاد", "محل الميلاد"],
