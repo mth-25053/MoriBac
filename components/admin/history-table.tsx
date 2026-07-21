@@ -20,6 +20,21 @@ export function HistoryTable({ rows, dict }: { rows: HistoryRow[]; dict: AdminDi
     toast.success(dict.undoSuccess);
     router.refresh();
   }
+  async function complete(id: string) {
+    if (!confirm(dict.confirmCompleteImport)) return;
+    const response = await fetch(`/api/admin/import/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "x-csrf-token": csrfFromDocument() },
+      body: JSON.stringify({ action: "complete" })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const messages: Record<string, string> = { ALREADY_IMPORTED: dict.alreadyImported, CANNOT_RESUME_BATCH: dict.cannotResumeBatch };
+      return toast.error(messages[data.error] || dict.cannotResumeBatch);
+    }
+    toast.success(`${dict.completeImportSuccess}: ${data.imported}`);
+    router.refresh();
+  }
   if (!rows.length) return <p className="muted p-8 text-center">{dict.noImports}</p>;
-  return <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-[var(--surface-2)]"><tr>{[dict.fileName,dict.examYear,dict.status,dict.validRows,dict.date,dict.checksum,""].map((heading,index)=><th className="p-4 text-start" key={`${heading}-${index}`}>{heading}</th>)}</tr></thead><tbody>{rows.map(row=><tr className="border-t" style={{borderColor:"var(--line)"}} key={row.id}><td className="p-4"><b>{row.fileName}</b><div className="muted text-xs">{row.adminEmail}</div></td><td className="p-4">{row.year}</td><td className="p-4"><span className={`badge ${row.status==="FAILED"?"fail":""}`}>{row.status==="IMPORTED"?dict.imported:row.status==="FAILED"?dict.statusFailed:dict.statusValidated}</span></td><td className="p-4">{row.validRows}/{row.totalRows}{row.invalidRows?` · ${row.invalidRows} ${dict.invalidRows}`:""}</td><td className="p-4" dir="ltr">{new Date(row.createdAt).toLocaleString()}</td><td className="max-w-44 truncate p-4 font-mono text-xs" title={row.checksum}>{row.checksum}</td><td className="p-4"><button className="button secondary !min-h-10 !text-[var(--danger)]" disabled={row.isPublished} title={row.isPublished?dict.cannotUndoPublished:undefined} onClick={()=>undo(row.id)}>{dict.undoImport}</button></td></tr>)}</tbody></table></div>;
+  return <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-[var(--surface-2)]"><tr>{[dict.fileName,dict.examYear,dict.status,dict.validRows,dict.date,dict.checksum,""].map((heading,index)=><th className="p-4 text-start" key={`${heading}-${index}`}>{heading}</th>)}</tr></thead><tbody>{rows.map(row=><tr className="border-t" style={{borderColor:"var(--line)"}} key={row.id}><td className="p-4"><b>{row.fileName}</b><div className="muted text-xs">{row.adminEmail}</div></td><td className="p-4">{row.year}</td><td className="p-4"><span className={`badge ${row.status==="FAILED"?"fail":""}`}>{row.status==="IMPORTED"?dict.imported:row.status==="FAILED"?dict.statusFailed:dict.statusValidated}</span></td><td className="p-4">{row.validRows}/{row.totalRows}{row.invalidRows?` · ${row.invalidRows} ${dict.invalidRows}`:""}</td><td className="p-4" dir="ltr">{new Date(row.createdAt).toLocaleString()}</td><td className="max-w-44 truncate p-4 font-mono text-xs" title={row.checksum}>{row.checksum}</td><td className="p-4"><div className="flex flex-wrap gap-2">{row.status==="VALIDATED"&&<button className="button secondary !min-h-10" onClick={()=>complete(row.id)}>{dict.completeImport}</button>}<button className="button secondary !min-h-10 !text-[var(--danger)]" disabled={row.isPublished} title={row.isPublished?dict.cannotUndoPublished:undefined} onClick={()=>undo(row.id)}>{dict.undoImport}</button></div></td></tr>)}</tbody></table></div>;
 }

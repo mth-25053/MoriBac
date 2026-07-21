@@ -35,3 +35,5 @@ export const decisionMappingCreateSchema = z.object({
 export const decisionMappingUpdateSchema = z.object({
   decision: z.enum(DECISIONS)
 });
+
+export const importActionSchema = z.object({ action: z.literal("complete") });

@@ -1,21 +1,23 @@
-import { loadImportUpload } from "@/lib/import-upload";
+import { loadImportUpload, persistBufferAsUpload } from "@/lib/import-upload";
 
 export type ImportWorkbookInput = {
   buffer: Buffer;
   fileName: string;
   mimeType: string;
-  uploadId: string | null;
+  uploadId: string;
   source: "direct" | "chunked";
 };
 
 export async function importWorkbookInput(form: FormData, adminId: string): Promise<ImportWorkbookInput> {
   const file = form.get("file");
   if (file instanceof File) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const uploadId = await persistBufferAsUpload(adminId, file.name, file.type, buffer);
     return {
-      buffer: Buffer.from(await file.arrayBuffer()),
+      buffer,
       fileName: file.name,
       mimeType: file.type,
-      uploadId: null,
+      uploadId,
       source: "direct"
     };
   }

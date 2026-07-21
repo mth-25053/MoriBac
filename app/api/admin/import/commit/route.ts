@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
 import { databaseUnavailable, isDatabaseError } from "@/lib/database-errors";
 import { inspectExcel, parseExcel, parseMappingJson, validateExcelFile } from "@/lib/excel";
 import { DecisionMappingRepository } from "@/lib/excel/decision-mapping-repository";
@@ -7,7 +6,7 @@ import { MappingRepository } from "@/lib/excel/mapping-repository";
 import { resolveMapping } from "@/lib/excel/mapping-service";
 import { deleteImportUpload } from "@/lib/import-upload";
 import { importWorkbookInput } from "@/lib/import-request";
-import { chunks, DuplicateImportError, errorSummary, markBatchFailed, saveValidationReport } from "@/lib/import-batches";
+import { DuplicateCandidateError, DuplicateImportError, errorSummary, insertCandidates, markBatchFailed, saveValidationReport } from "@/lib/import-batches";
 import { authorizeMutation, apiError } from "@/lib/http";
 import { logRequest, logRequestError, requestId } from "@/lib/request-log";
 import { yearSchema } from "@/lib/validation";
@@ -72,7 +71,8 @@ export async function POST(request: Request) {
       report,
       fileName: input.fileName,
       year: parsedYear.data.year,
-      adminId: auth.session.adminId
+      adminId: auth.session.adminId,
+      uploadId: input.uploadId
     });
     batchId = validation.batch.id;
     if (report.invalidRows) {
@@ -85,28 +85,7 @@ export async function POST(request: Request) {
     }
 
     stage = "candidate-import-transaction";
-    await db.$transaction(async (tx) => {
-      for (const candidateNumbers of chunks(report.rows.map((row) => row.candidateNumber), 1000)) {
-        const duplicate = await tx.candidate.findFirst({
-          where: { examYearId: validation.examYear.id, candidateNumber: { in: candidateNumbers } },
-          select: { candidateNumber: true }
-        });
-        if (duplicate) throw new Error("DUPLICATE_CANDIDATE:" + duplicate.candidateNumber);
-      }
-      for (const candidateRows of chunks(report.rows, 1000)) {
-        await tx.candidate.createMany({
-          data: candidateRows.map((row) => ({
-            ...row,
-            examYearId: validation.examYear.id,
-            importBatchId: validation.batch.id
-          }))
-        });
-      }
-      await tx.importBatch.update({
-        where: { id: validation.batch.id },
-        data: { status: "IMPORTED", importedAt: new Date() }
-      });
-    }, { maxWait: 10_000, timeout: 300_000 });
+    await insertCandidates({ examYearId: validation.examYear.id, batchId: validation.batch.id, rows: report.rows });
 
     if (uploadId) {
       stage = "upload-cleanup";
@@ -128,15 +107,13 @@ export async function POST(request: Request) {
     });
     if (error instanceof DuplicateImportError) return apiError("DUPLICATE_FILE", 409, { requestId: id });
     if (batchId) {
-      const message = error instanceof Error && error.message.startsWith("DUPLICATE_CANDIDATE:")
-        ? error.message
-        : "IMPORT_TRANSACTION_FAILED";
+      const message = error instanceof DuplicateCandidateError ? error.message : "IMPORT_TRANSACTION_FAILED";
       await markBatchFailed(batchId, {
         rowNumber: 0,
-        field: message.startsWith("DUPLICATE_CANDIDATE:") ? "candidateNumber" : undefined,
+        field: error instanceof DuplicateCandidateError ? "candidateNumber" : undefined,
         message
       });
-      if (message.startsWith("DUPLICATE_CANDIDATE:")) return apiError(message, 409, { requestId: id });
+      if (error instanceof DuplicateCandidateError) return apiError(message, 409, { requestId: id });
     }
     if (isDatabaseError(error)) return databaseUnavailable(error, "import-commit:" + stage, id);
     const code = error instanceof Error && /^[A-Z0-9_]+$/.test(error.message) ? error.message : "INVALID_EXCEL_FILE";

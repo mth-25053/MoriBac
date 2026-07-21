@@ -96,7 +96,8 @@ export async function POST(request: Request) {
       report,
       fileName: input.fileName,
       year: parsedYear.data.year,
-      adminId: auth.session.adminId
+      adminId: auth.session.adminId,
+      uploadId: input.uploadId
     });
     logRequest(id, "import-preview", "preview-ready", {
       source: input.source,

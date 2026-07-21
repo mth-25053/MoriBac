@@ -1,7 +1,11 @@
+import { randomUUID } from "node:crypto";
+import type { Prisma } from "@prisma/client";
 import { MAX_UPLOAD_SIZE } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { withDatabaseRetry } from "@/lib/database-retry";
 import { IMPORT_CHUNK_SIZE } from "@/lib/import-upload-config";
+
+type PrismaTransaction = Prisma.TransactionClient;
 
 const MAX_CHUNKS = Math.ceil(MAX_UPLOAD_SIZE / IMPORT_CHUNK_SIZE);
 const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
@@ -30,13 +34,22 @@ export function validateUploadMetadata(value: ImportUploadMetadata, chunkSize: n
   if (expectedChunks !== value.totalChunks) throw new Error("INVALID_UPLOAD_CHUNKS");
 }
 
+export async function expireStaleUploads(tx: PrismaTransaction, adminId: string, cutoff: Date) {
+  const inUse = await tx.importBatch.findMany({
+    where: { adminId, status: { not: "IMPORTED" }, uploadId: { not: null } },
+    select: { uploadId: true }
+  });
+  const protectedIds = inUse.map((batch) => batch.uploadId as string);
+  await tx.importUpload.deleteMany({
+    where: { adminId, createdAt: { lt: cutoff }, id: { notIn: protectedIds } }
+  });
+}
+
 export async function saveImportChunk(adminId: string, metadata: ImportUploadMetadata, data: Buffer) {
   validateUploadMetadata(metadata, data.length);
   return withDatabaseRetry(
     () => db.$transaction(async (tx) => {
-      await tx.importUpload.deleteMany({
-        where: { adminId, createdAt: { lt: new Date(Date.now() - UPLOAD_TTL_MS) } }
-      });
+      await expireStaleUploads(tx, adminId, new Date(Date.now() - UPLOAD_TTL_MS));
       const upload = await tx.importUpload.upsert({
         where: { id: metadata.uploadId },
         create: {
@@ -65,6 +78,26 @@ export async function saveImportChunk(adminId: string, metadata: ImportUploadMet
     "import-upload-chunk-save",
     { maxAttempts: 3, timeoutMs: 0, baseDelayMs: 300 }
   );
+}
+
+export async function persistBufferAsUpload(adminId: string, fileName: string, mimeType: string, buffer: Buffer) {
+  const uploadId = randomUUID();
+  const totalChunks = Math.max(1, Math.ceil(buffer.length / IMPORT_CHUNK_SIZE));
+  await withDatabaseRetry(
+    () => db.$transaction(async (tx) => {
+      await expireStaleUploads(tx, adminId, new Date(Date.now() - UPLOAD_TTL_MS));
+      await tx.importUpload.create({
+        data: { id: uploadId, adminId, fileName, mimeType, fileSize: buffer.length, totalChunks }
+      });
+      for (let index = 0; index < totalChunks; index += 1) {
+        const chunk = buffer.subarray(index * IMPORT_CHUNK_SIZE, (index + 1) * IMPORT_CHUNK_SIZE);
+        await tx.importUploadChunk.create({ data: { uploadId, index, data: Uint8Array.from(chunk) } });
+      }
+    }, { maxWait: 10_000, timeout: 30_000 }),
+    "import-upload-persist-direct",
+    { maxAttempts: 3, timeoutMs: 0, baseDelayMs: 300 }
+  );
+  return uploadId;
 }
 
 export async function loadImportUpload(adminId: string, uploadId: string) {

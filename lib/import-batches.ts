@@ -1,7 +1,7 @@
 import type { ImportStatus, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withDatabaseRetry } from "@/lib/database-retry";
-import type { ImportReport, RowError } from "@/lib/excel";
+import type { ImportReport, ParsedCandidate, RowError } from "@/lib/excel";
 
 export class DuplicateImportError extends Error {
   constructor() {
@@ -10,8 +10,21 @@ export class DuplicateImportError extends Error {
   }
 }
 
+export class DuplicateCandidateError extends Error {
+  constructor(readonly candidateNumber: string) {
+    super("DUPLICATE_CANDIDATE:" + candidateNumber);
+    this.name = "DuplicateCandidateError";
+  }
+}
+
 export function assertBatchCanBeValidated(existing: { status: ImportStatus; examYearId: string } | null, examYearId: string) {
   if (existing?.status === "IMPORTED" || (existing && existing.examYearId !== examYearId)) throw new DuplicateImportError();
+}
+
+export function resumeEligibility(batch: { status: ImportStatus; uploadId: string | null }): "OK" | "ALREADY_IMPORTED" | "CANNOT_RESUME_BATCH" {
+  if (batch.status === "IMPORTED") return "ALREADY_IMPORTED";
+  if (batch.status === "FAILED" || !batch.uploadId) return "CANNOT_RESUME_BATCH";
+  return "OK";
 }
 
 function jsonValue(value: Record<string, unknown> | undefined): Prisma.InputJsonValue | undefined {
@@ -23,6 +36,7 @@ export async function saveValidationReport(input: {
   fileName: string;
   year: number;
   adminId: string;
+  uploadId: string;
 }) {
   return withDatabaseRetry(
     () => db.$transaction(async (tx) => {
@@ -44,7 +58,8 @@ export async function saveValidationReport(input: {
               validRows: input.report.validRows,
               invalidRows: input.report.invalidRows,
               importedAt: null,
-              adminId: input.adminId
+              adminId: input.adminId,
+              uploadId: input.uploadId
             }
           })
         : await tx.importBatch.create({
@@ -56,7 +71,8 @@ export async function saveValidationReport(input: {
               validRows: input.report.validRows,
               invalidRows: input.report.invalidRows,
               adminId: input.adminId,
-              examYearId: examYear.id
+              examYearId: examYear.id,
+              uploadId: input.uploadId
             }
           });
       await tx.importError.deleteMany({ where: { importBatchId: batch.id } });
@@ -76,6 +92,31 @@ export async function saveValidationReport(input: {
     "import-validation-save",
     { maxAttempts: 3, timeoutMs: 0, baseDelayMs: 400 }
   );
+}
+
+export async function insertCandidates(input: { examYearId: string; batchId: string; rows: ParsedCandidate[] }) {
+  await db.$transaction(async (tx) => {
+    for (const candidateNumbers of chunks(input.rows.map((row) => row.candidateNumber), 1000)) {
+      const duplicate = await tx.candidate.findFirst({
+        where: { examYearId: input.examYearId, candidateNumber: { in: candidateNumbers } },
+        select: { candidateNumber: true }
+      });
+      if (duplicate) throw new DuplicateCandidateError(duplicate.candidateNumber);
+    }
+    for (const candidateRows of chunks(input.rows, 1000)) {
+      await tx.candidate.createMany({
+        data: candidateRows.map((row) => ({
+          ...row,
+          examYearId: input.examYearId,
+          importBatchId: input.batchId
+        }))
+      });
+    }
+    await tx.importBatch.update({
+      where: { id: input.batchId },
+      data: { status: "IMPORTED", importedAt: new Date() }
+    });
+  }, { maxWait: 10_000, timeout: 300_000 });
 }
 
 export async function markBatchFailed(batchId: string, error: RowError) {

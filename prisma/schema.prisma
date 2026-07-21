@@ -114,6 +114,7 @@ model ImportBatch {
   createdAt   DateTime      @default(now())
   adminId     String
   examYearId  String
+  uploadId    String?
   admin       Admin         @relation(fields: [adminId], references: [id], onDelete: Restrict)
   examYear    ExamYear      @relation(fields: [examYearId], references: [id], onDelete: Cascade)
   candidates  Candidate[]

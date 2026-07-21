@@ -1,7 +1,56 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { databaseUnavailable, isDatabaseError } from "@/lib/database-errors";
+import { inspectExcel, parseExcel, validateExcelFile } from "@/lib/excel";
+import { DecisionMappingRepository } from "@/lib/excel/decision-mapping-repository";
+import { MappingRepository } from "@/lib/excel/mapping-repository";
+import { resolveMapping } from "@/lib/excel/mapping-service";
 import { authorizeMutation, apiError } from "@/lib/http";
+import { DuplicateCandidateError, insertCandidates, markBatchFailed, resumeEligibility } from "@/lib/import-batches";
+import { deleteImportUpload, loadImportUpload } from "@/lib/import-upload";
+import { importActionSchema } from "@/lib/validation";
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await authorizeMutation(request);
+  if ("error" in auth) return auth.error;
+  const { id } = await params;
+  const parsed = importActionSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return apiError("INVALID_ACTION");
+
+  const batch = await db.importBatch.findUnique({ where: { id } });
+  if (!batch) return apiError("BATCH_NOT_FOUND", 404);
+  const eligibility = resumeEligibility(batch);
+  if (eligibility !== "OK") return apiError(eligibility, 409);
+
+  try {
+    const stored = await loadImportUpload(batch.adminId, batch.uploadId as string);
+    validateExcelFile(stored.buffer, stored.fileName, stored.mimeType);
+    const inspection = await inspectExcel(stored.buffer);
+    const repository = new MappingRepository();
+    const resolved = await resolveMapping(inspection, null, repository);
+    if (resolved.missing.length) return apiError("CANNOT_RESUME_BATCH", 409);
+
+    const decisionMappingRepository = new DecisionMappingRepository();
+    const report = await parseExcel(stored.buffer, resolved.mapping, inspection, decisionMappingRepository);
+    if (report.checksum !== batch.checksum) return apiError("CANNOT_RESUME_BATCH", 409);
+    if (report.invalidRows || report.unknownDecisions.length) return apiError("CANNOT_RESUME_BATCH", 409);
+
+    await insertCandidates({ examYearId: batch.examYearId, batchId: batch.id, rows: report.rows });
+    await deleteImportUpload(batch.adminId, stored.uploadId).catch(() => undefined);
+    return NextResponse.json({ ok: true, imported: report.validRows });
+  } catch (error) {
+    if (error instanceof DuplicateCandidateError) {
+      await markBatchFailed(batch.id, { rowNumber: 0, field: "candidateNumber", message: error.message });
+      return apiError(error.message, 409);
+    }
+    if (isDatabaseError(error)) return databaseUnavailable(error, "import-complete");
+    const code = error instanceof Error && /^[A-Z0-9_]+$/.test(error.message) ? error.message : "CANNOT_RESUME_BATCH";
+    return apiError(code, 422);
+  }
+}
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeMutation(request);
