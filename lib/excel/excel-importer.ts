@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import ExcelJS from "exceljs";
 import { DECISIONS, MAX_UPLOAD_SIZE, type DecisionValue } from "@/lib/constants";
 import { candidateNumberText, cellText } from "@/lib/excel/cell-value";
+import { DecisionMappingRepository, type DecisionMappingLookup } from "@/lib/excel/decision-mapping-repository";
 import { HeaderDetector } from "@/lib/excel/header-detector";
 import { normalizeHeader } from "@/lib/excel/header-normalizer";
 import {
@@ -12,6 +13,7 @@ import {
   type ImportReport,
   type ParsedCandidate,
   type RowError,
+  type UnknownDecision,
   type WorkbookInspection
 } from "@/lib/excel/types";
 
@@ -109,6 +111,26 @@ async function loadWorkbook(buffer: Buffer) {
   return workbook;
 }
 
+function finalizeCandidate(raw: Record<string, unknown>, number: string, average: number, decision: DecisionValue): ParsedCandidate {
+  return {
+    candidateNumber: number,
+    fullName: cleanText(String(raw.fullName)),
+    series: cleanText(String(raw.series)),
+    average: Math.round(average * 100) / 100,
+    decision,
+    officialDecision: optionalText(String(raw.decision ?? "")),
+    wilaya: optionalText(String(raw.wilaya ?? "")),
+    examCenter: optionalText(String(raw.examCenter ?? "")),
+    school: optionalText(String(raw.school ?? "")),
+    birthDate: optionalText(String(raw.birthDate ?? "")),
+    birthPlace: optionalText(String(raw.birthPlace ?? "")),
+    candidateType: optionalText(String(raw.candidateType ?? ""))
+  };
+}
+
+type PendingDecisionRow = { rowNumber: number; raw: Record<string, unknown>; rowErrors: RowError[]; average: number; number: string };
+type PendingDecisionGroup = { rawValue: string; entries: PendingDecisionRow[] };
+
 export class ExcelImporter {
   constructor(private readonly detector = new HeaderDetector()) {}
 
@@ -116,7 +138,12 @@ export class ExcelImporter {
     return this.detector.detect(await loadWorkbook(buffer));
   }
 
-  async import(buffer: Buffer, inputMapping?: ColumnMapping, knownInspection?: WorkbookInspection): Promise<ImportReport> {
+  async import(
+    buffer: Buffer,
+    inputMapping?: ColumnMapping,
+    knownInspection?: WorkbookInspection,
+    decisionLookup: DecisionMappingLookup = new DecisionMappingRepository()
+  ): Promise<ImportReport> {
     const workbook = await loadWorkbook(buffer);
     const inspection = knownInspection ?? this.detector.detect(workbook);
     const mapping = validateColumnMapping(inputMapping ?? inspection.suggestedMapping, inspection);
@@ -129,6 +156,8 @@ export class ExcelImporter {
     const errors: RowError[] = [];
     const seen = new Set<string>();
     const mappedColumns = Object.values(mapping).filter((column): column is number => Boolean(column));
+    const pendingByKey = new Map<string, PendingDecisionGroup>();
+    let totalRows = 0;
 
     for (let rowNumber = inspection.headerRow + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
       const row = sheet.getRow(rowNumber);
@@ -148,45 +177,65 @@ export class ExcelImporter {
         birthPlace: get("birthPlace"),
         candidateType: get("candidateType")
       };
+      totalRows += 1;
       const rowErrors: RowError[] = [];
       for (const field of requiredFields) {
         if (!String(raw[field] ?? "").trim()) rowErrors.push({ rowNumber, field, message: "Missing required value", rawData: raw });
       }
       const average = Number(String(raw.average ?? "").replace(",", "."));
       if (!Number.isFinite(average) || average < 0 || average > 20) rowErrors.push({ rowNumber, field: "average", message: "Average must be between 0 and 20", rawData: raw });
-      const decision = mapDecision(String(raw.decision ?? ""));
-      if (!decision) rowErrors.push({ rowNumber, field: "decision", message: "Unknown decision", rawData: raw });
       if (number && seen.has(number)) rowErrors.push({ rowNumber, field: "candidateNumber", message: "Duplicate candidate number in file", rawData: raw });
       seen.add(number);
-      if (rowErrors.length || !decision) {
+
+      const decisionText = String(raw.decision ?? "");
+      const decision = mapDecision(decisionText);
+      if (decision) {
+        if (rowErrors.length) { errors.push(...rowErrors); continue; }
+        rows.push(finalizeCandidate(raw, number, average, decision));
+        continue;
+      }
+      if (!decisionText.trim()) {
+        // A blank decision is a missing-value problem, not an unrecognized wording - never defer it for admin resolution.
+        rowErrors.push({ rowNumber, field: "decision", message: "Unknown decision", rawData: raw });
         errors.push(...rowErrors);
         continue;
       }
-      rows.push({
-        candidateNumber: number,
-        fullName: cleanText(String(raw.fullName)),
-        series: cleanText(String(raw.series)),
-        average: Math.round(average * 100) / 100,
-        decision,
-        officialDecision: optionalText(String(raw.decision ?? "")),
-        wilaya: optionalText(String(raw.wilaya ?? "")),
-        examCenter: optionalText(String(raw.examCenter ?? "")),
-        school: optionalText(String(raw.school ?? "")),
-        birthDate: optionalText(String(raw.birthDate ?? "")),
-        birthPlace: optionalText(String(raw.birthPlace ?? "")),
-        candidateType: optionalText(String(raw.candidateType ?? ""))
-      });
+
+      // Non-blank text the hardcoded rules don't recognize: defer to the administrator-maintained mapping
+      // instead of rejecting the row or guessing. Resolved after the full pass, in one batched lookup.
+      const normalizedKey = normalizeHeader(decisionText);
+      const group = pendingByKey.get(normalizedKey) ?? { rawValue: cleanText(decisionText), entries: [] };
+      group.entries.push({ rowNumber, raw, rowErrors, average, number });
+      pendingByKey.set(normalizedKey, group);
+    }
+
+    const unknownDecisions: UnknownDecision[] = [];
+    if (pendingByKey.size) {
+      const resolved = await decisionLookup.findResolved([...pendingByKey.keys()]);
+      for (const [normalizedKey, group] of pendingByKey) {
+        const decision = resolved.get(normalizedKey);
+        if (!decision) {
+          unknownDecisions.push({ normalizedKey, rawValue: group.rawValue, count: group.entries.length });
+          continue;
+        }
+        for (const entry of group.entries) {
+          if (entry.rowErrors.length) { errors.push(...entry.rowErrors); continue; }
+          rows.push(finalizeCandidate(entry.raw, entry.number, entry.average, decision));
+        }
+      }
+      unknownDecisions.sort((left, right) => right.count - left.count);
     }
 
     const invalidRows = new Set(errors.map((error) => error.rowNumber)).size;
     return {
       checksum: createHash("sha256").update(buffer).digest("hex"),
-      totalRows: rows.length + invalidRows,
+      totalRows,
       validRows: rows.length,
       invalidRows,
       preview: rows.slice(0, 20),
       rows,
       errors,
+      unknownDecisions,
       inspection,
       mapping
     };
@@ -202,4 +251,5 @@ export class MappingRequiredError extends Error {
 
 const importer = new ExcelImporter();
 export const inspectExcel = (buffer: Buffer) => importer.inspect(buffer);
-export const importExcel = (buffer: Buffer, mapping?: ColumnMapping, inspection?: WorkbookInspection) => importer.import(buffer, mapping, inspection);
+export const importExcel = (buffer: Buffer, mapping?: ColumnMapping, inspection?: WorkbookInspection, decisionLookup?: DecisionMappingLookup) =>
+  importer.import(buffer, mapping, inspection, decisionLookup);

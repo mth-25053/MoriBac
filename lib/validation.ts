@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DECISIONS } from "@/lib/constants";
 
 export const candidateSearchSchema = z.object({
   number: z.string().trim().min(1).max(50).regex(/^\d+$/)
@@ -24,4 +25,13 @@ export const yearSchema = z.object({ year: z.coerce.number().int().min(2000).max
 export const settingsSchema = z.object({
   siteNoticeAr: z.string().trim().max(500),
   siteNoticeFr: z.string().trim().max(500)
+});
+
+export const decisionMappingCreateSchema = z.object({
+  rawValue: z.string().trim().min(1).max(200),
+  decision: z.enum(DECISIONS)
+});
+
+export const decisionMappingUpdateSchema = z.object({
+  decision: z.enum(DECISIONS)
 });

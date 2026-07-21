@@ -3,14 +3,17 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { MappingWizard, canonicalFieldLabel } from "@/components/admin/mapping-wizard";
+import { UnknownDecisionsResolver } from "@/components/admin/unknown-decisions-resolver";
 import type { AdminDictionary } from "@/lib/admin-i18n";
+import type { DecisionValue } from "@/lib/constants";
 import { csrfFromDocument } from "@/lib/csrf-client";
 import { DIRECT_UPLOAD_LIMIT, IMPORT_CHUNK_SIZE } from "@/lib/import-upload-config";
-import { canonicalFields, type CanonicalField, type ColumnMapping, type DetectedColumn } from "@/lib/excel/types";
+import { canonicalFields, type CanonicalField, type ColumnMapping, type DetectedColumn, type UnknownDecision } from "@/lib/excel/types";
 import type { Locale } from "@/lib/i18n";
 
 type Report = {
   mappingRequired: false;
+  unknownDecisionsRequired: false;
   checksum: string;
   mapping: ColumnMapping;
   mappingSource: "automatic" | "saved" | "manual";
@@ -31,17 +34,26 @@ type MappingRequest = {
   missingRequired: CanonicalField[];
 };
 
+type UnknownDecisionsRequest = {
+  mappingRequired: false;
+  unknownDecisionsRequired: true;
+  unknownDecisions: UnknownDecision[];
+  checksum: string;
+};
+
 export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: Locale }) {
   const [file, setFile] = useState<File | null>(null);
   const [year, setYear] = useState(new Date().getFullYear());
   const [report, setReport] = useState<Report | null>(null);
   const [mappingRequest, setMappingRequest] = useState<MappingRequest | null>(null);
+  const [unknownDecisionsRequest, setUnknownDecisionsRequest] = useState<UnknownDecisionsRequest | null>(null);
   const [loading, setLoading] = useState(false);
   const uploadRef = useRef<{ file: File; uploadId: string } | null>(null);
 
   function resetResult() {
     setReport(null);
     setMappingRequest(null);
+    setUnknownDecisionsRequest(null);
   }
 
   async function parsedResponse(response: Response) {
@@ -159,11 +171,39 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
     if (!data) return;
     if (data.mappingRequired) {
       setReport(null);
+      setUnknownDecisionsRequest(null);
       setMappingRequest(data as MappingRequest);
+    } else if (data.unknownDecisionsRequired) {
+      setReport(null);
+      setMappingRequest(null);
+      setUnknownDecisionsRequest(data as UnknownDecisionsRequest);
     } else {
       setMappingRequest(null);
+      setUnknownDecisionsRequest(null);
       setReport(data as Report);
     }
+  }
+
+  async function resolveUnknownDecisions(resolutions: { rawValue: string; decision: DecisionValue }[]) {
+    setLoading(true);
+    for (const resolution of resolutions) {
+      const response = await fetch("/api/admin/decision-mappings", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-csrf-token": csrfFromDocument() },
+        body: JSON.stringify(resolution)
+      });
+      if (!response.ok) {
+        const data = await parsedResponse(response);
+        const code = typeof data.error === "string" ? data.error : "INVALID_SERVER_RESPONSE";
+        toast.error(translatedApiError(code, dict, locale));
+        setLoading(false);
+        return;
+      }
+    }
+    toast.success(dict.mappingSaved);
+    setUnknownDecisionsRequest(null);
+    setLoading(false);
+    await preview();
   }
 
   async function commit() {
@@ -172,6 +212,7 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
       toast.success(`${dict.imported}: ${data.imported}`);
       setReport(null);
       setMappingRequest(null);
+      setUnknownDecisionsRequest(null);
       setFile(null);
       uploadRef.current = null;
     }
@@ -198,6 +239,14 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
       headerRow={mappingRequest.headerRow}
       loading={loading}
       onConfirm={preview}
+    />}
+
+    {unknownDecisionsRequest && <UnknownDecisionsResolver
+      key={unknownDecisionsRequest.checksum}
+      dict={dict}
+      unknownDecisions={unknownDecisionsRequest.unknownDecisions}
+      loading={loading}
+      onConfirm={resolveUnknownDecisions}
     />}
 
     {report && <section className="mt-7 space-y-5">

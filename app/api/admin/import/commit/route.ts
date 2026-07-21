@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { databaseUnavailable, isDatabaseError } from "@/lib/database-errors";
 import { inspectExcel, parseExcel, parseMappingJson, validateExcelFile } from "@/lib/excel";
+import { DecisionMappingRepository } from "@/lib/excel/decision-mapping-repository";
 import { MappingRepository } from "@/lib/excel/mapping-repository";
 import { resolveMapping } from "@/lib/excel/mapping-service";
 import { deleteImportUpload } from "@/lib/import-upload";
@@ -54,8 +55,15 @@ export async function POST(request: Request) {
     if (resolved.missing.length) return apiError("MAPPING_REQUIRED", 409, { missingRequired: resolved.missing, requestId: id });
 
     stage = "workbook-parse";
-    const report = await parseExcel(input.buffer, resolved.mapping, inspection);
+    const decisionMappingRepository = new DecisionMappingRepository();
+    const report = await parseExcel(input.buffer, resolved.mapping, inspection, decisionMappingRepository);
     if (report.checksum !== expectedChecksum) return apiError("FILE_CHANGED_AFTER_PREVIEW", 409, { requestId: id });
+
+    stage = "unknown-decision-check";
+    if (report.unknownDecisions.length) {
+      await decisionMappingRepository.recordUnknown(report.unknownDecisions);
+      return apiError("UNKNOWN_DECISIONS_REQUIRE_MAPPING", 409, { unknownDecisions: report.unknownDecisions, requestId: id });
+    }
 
     stage = "mapping-save";
     await repository.save(inspection, resolved.mapping);

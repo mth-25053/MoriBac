@@ -215,3 +215,59 @@ describe("schema-independent Excel validation", () => {
     });
   }, 30_000);
 });
+
+describe("administrator-driven decision mapping", () => {
+  it("defers a non-blank unrecognized decision instead of rejecting the row or guessing", async () => {
+    const buffer = await workbook([
+      headers,
+      ["001", "A", "SN", 12, "En attente", "W", "C", "S"],
+      ["002", "B", "SN", 13, "En attente", "W", "C", "S"]
+    ]);
+    const lookup = { findResolved: vi.fn().mockResolvedValue(new Map()) };
+    const report = await parseExcel(buffer, undefined, undefined, lookup);
+    expect(report.rows).toHaveLength(0);
+    expect(report.errors).toHaveLength(0);
+    expect(report.invalidRows).toBe(0);
+    expect(report.totalRows).toBe(2);
+    expect(report.unknownDecisions).toEqual([{ normalizedKey: "ENATTENTE", rawValue: "En attente", count: 2 }]);
+    expect(lookup.findResolved).toHaveBeenCalledWith(["ENATTENTE"]);
+  });
+
+  it("applies a saved custom decision mapping automatically and preserves the original wording", async () => {
+    const buffer = await workbook([headers, ["003", "C", "SN", 14, "En attente", "W", "C", "S"]]);
+    const lookup = { findResolved: vi.fn().mockResolvedValue(new Map([["ENATTENTE", "SESSIONNAIRE" as const]])) };
+    const report = await parseExcel(buffer, undefined, undefined, lookup);
+    expect(report.unknownDecisions).toEqual([]);
+    expect(report.invalidRows).toBe(0);
+    expect(report.rows).toHaveLength(1);
+    expect(report.rows[0]).toMatchObject({ candidateNumber: "003", decision: "SESSIONNAIRE", officialDecision: "En attente" });
+  });
+
+  it("never consults the decision-mapping lookup when every decision resolves via the existing hardcoded rules", async () => {
+    const buffer = await workbook([headers, ["004", "D", "SN", 10, "ADMIS", "W", "C", "S"]]);
+    const lookup = { findResolved: vi.fn().mockRejectedValue(new Error("should not be called")) };
+    const report = await parseExcel(buffer, undefined, undefined, lookup);
+    expect(report.rows).toHaveLength(1);
+    expect(lookup.findResolved).not.toHaveBeenCalled();
+  });
+
+  it("still fails a row on its own unrelated error even after its decision is resolved", async () => {
+    const buffer = await workbook([headers, ["005", "", "SN", 11, "En attente", "W", "C", "S"]]);
+    const lookup = { findResolved: vi.fn().mockResolvedValue(new Map([["ENATTENTE", "REDOUBLE" as const]])) };
+    const report = await parseExcel(buffer, undefined, undefined, lookup);
+    expect(report.rows).toHaveLength(0);
+    expect(report.unknownDecisions).toEqual([]);
+    expect(report.invalidRows).toBe(1);
+    expect(report.errors.some((error) => error.field === "fullName")).toBe(true);
+  });
+
+  it("treats a blank decision cell as a missing-value error rather than deferring it for admin resolution", async () => {
+    const buffer = await workbook([headers, ["006", "F", "SN", 9, "", "W", "C", "S"]]);
+    const lookup = { findResolved: vi.fn() };
+    const report = await parseExcel(buffer, undefined, undefined, lookup);
+    expect(report.unknownDecisions).toEqual([]);
+    expect(report.invalidRows).toBe(1);
+    expect(report.errors.some((error) => error.field === "decision" && error.message === "Unknown decision")).toBe(true);
+    expect(lookup.findResolved).not.toHaveBeenCalled();
+  });
+});

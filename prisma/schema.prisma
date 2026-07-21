@@ -149,6 +149,18 @@ model ExcelMapping {
   @@index([lastUsedAt])
 }
 
+model DecisionMapping {
+  id            String    @id @default(cuid())
+  normalizedKey String    @unique
+  rawValue      String
+  decision      Decision?
+  occurrences   Int       @default(1)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([decision])
+}
+
 model Setting {
   key       String   @id
   value     String

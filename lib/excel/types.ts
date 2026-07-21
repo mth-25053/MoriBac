@@ -59,6 +59,12 @@ export type RowError = {
   rawData?: Record<string, unknown>;
 };
 
+export type UnknownDecision = {
+  normalizedKey: string;
+  rawValue: string;
+  count: number;
+};
+
 export type ImportReport = {
   checksum: string;
   totalRows: number;
@@ -67,6 +73,7 @@ export type ImportReport = {
   preview: ParsedCandidate[];
   rows: ParsedCandidate[];
   errors: RowError[];
+  unknownDecisions: UnknownDecision[];
   inspection: WorkbookInspection;
   mapping: ColumnMapping;
 };

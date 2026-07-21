@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { databaseUnavailable, isDatabaseError } from "@/lib/database-errors";
 import { inspectExcel, parseExcel, parseMappingJson, validateExcelFile } from "@/lib/excel";
+import { DecisionMappingRepository } from "@/lib/excel/decision-mapping-repository";
 import { MappingRepository } from "@/lib/excel/mapping-repository";
 import { resolveMapping } from "@/lib/excel/mapping-service";
 import { importWorkbookInput } from "@/lib/import-request";
@@ -68,9 +69,28 @@ export async function POST(request: Request) {
     }
 
     stage = "workbook-parse";
-    const report = await parseExcel(input.buffer, resolved.mapping, inspection);
+    const decisionMappingRepository = new DecisionMappingRepository();
+    const report = await parseExcel(input.buffer, resolved.mapping, inspection, decisionMappingRepository);
     stage = "mapping-save";
     await repository.save(inspection, resolved.mapping);
+
+    stage = "unknown-decision-check";
+    if (report.unknownDecisions.length) {
+      await decisionMappingRepository.recordUnknown(report.unknownDecisions);
+      logRequest(id, "import-preview", "unknown-decisions-required", {
+        source: input.source,
+        unknownDecisionCount: report.unknownDecisions.length,
+        elapsedMs: Date.now() - startedAt
+      });
+      return NextResponse.json({
+        mappingRequired: false,
+        unknownDecisionsRequired: true,
+        unknownDecisions: report.unknownDecisions,
+        checksum: report.checksum,
+        requestId: id
+      });
+    }
+
     stage = "preview-validation-save";
     const { batch } = await saveValidationReport({
       report,
@@ -87,6 +107,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({
       mappingRequired: false,
+      unknownDecisionsRequired: false,
       mappingSource: resolved.source,
       mapping: resolved.mapping,
       sheetName: inspection.sheetName,
