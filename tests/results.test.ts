@@ -79,7 +79,7 @@ describe("ranking and browsing business rules", () => {
     expect(candidateRank("ANNULE", 1)).toBeNull();
     expect(candidateRank("ADMIS", 1)).toBe(1);
     expect(decisionBadgeClass("ANNULE")).toBe("cancelled");
-    expect(decisionBadgeClass("REDOUBLE")).toBe("fail");
+    expect(decisionBadgeClass("REDOUBLE")).toBe("calm");
     expect(decisionBadgeClass("ADMIS")).toBe("");
   });
 });

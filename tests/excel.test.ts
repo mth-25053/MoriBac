@@ -185,6 +185,29 @@ describe("schema-independent Excel validation", () => {
     expect(report.errors.some((error) => error.field === "average")).toBe(true);
   });
 
+  it("summarizes duplicate candidate numbers and sample decision values for a fast preview", async () => {
+    const buffer = await workbook([
+      headers,
+      ["001", "A", "C", 10, "ADMIS", "W", "X", "S"],
+      ["001", "B", "C", 11, "ADMIS", "W", "X", "S"],
+      ["001", "C", "C", 12, "ADMIS", "W", "X", "S"],
+      ["002", "D", "C", 9, "Délibérations", "W", "X", "S"]
+    ]);
+    const report = await parseExcel(buffer);
+    expect(report.duplicateNumbers).toEqual([{ candidateNumber: "001", count: 3 }]);
+    expect(report.decisionSummary).toEqual(expect.arrayContaining([{ value: "ADMIS", count: 3 }, { value: "Délibérations", count: 1 }]));
+  });
+
+  it("recognizes NUMBAC/NUM_BAC/NUM-BAC/NUMERO and N° CANDIDAT as candidate-number headers", async () => {
+    for (const header of ["NUMBAC", "NUM_BAC", "NUM-BAC", "NUMERO", "N° CANDIDAT"]) {
+      const buffer = await workbook([[header, "Full Name", "Series", "Average", "Decision"], ["00007", "A", "C", 10, "ADMIS"]]);
+      const inspection = await inspectExcel(buffer);
+      expect(inspection.unresolvedRequired, `header "${header}" should resolve candidateNumber`).toEqual([]);
+      const report = await parseExcel(buffer, undefined, inspection);
+      expect(report.rows[0].candidateNumber).toBe("00007");
+    }
+  });
+
   it("rejects a non-XLSX signature", () => {
     expect(() => validateExcelFile(Buffer.from("not a workbook"), "results.xlsx", "application/octet-stream")).toThrow("INVALID_XLSX_SIGNATURE");
   });
@@ -217,20 +240,22 @@ describe("schema-independent Excel validation", () => {
 });
 
 describe("administrator-driven decision mapping", () => {
-  it("defers a non-blank unrecognized decision instead of rejecting the row or guessing", async () => {
+  it("never rejects a row over an unrecognized decision - it is imported with the raw text preserved as-is", async () => {
     const buffer = await workbook([
       headers,
-      ["001", "A", "SN", 12, "En attente", "W", "C", "S"],
-      ["002", "B", "SN", 13, "En attente", "W", "C", "S"]
+      ["001", "A", "SN", 12, "Délibérations", "W", "C", "S"],
+      ["002", "B", "SN", 13, "Délibérations", "W", "C", "S"]
     ]);
     const lookup = { findResolved: vi.fn().mockResolvedValue(new Map()) };
     const report = await parseExcel(buffer, undefined, undefined, lookup);
-    expect(report.rows).toHaveLength(0);
+    expect(report.rows).toHaveLength(2);
     expect(report.errors).toHaveLength(0);
     expect(report.invalidRows).toBe(0);
     expect(report.totalRows).toBe(2);
-    expect(report.unknownDecisions).toEqual([{ normalizedKey: "ENATTENTE", rawValue: "En attente", count: 2 }]);
-    expect(lookup.findResolved).toHaveBeenCalledWith(["ENATTENTE"]);
+    expect(report.rows.map((row) => row.decision)).toEqual(["Délibérations", "Délibérations"]);
+    expect(report.rows.map((row) => row.officialDecision)).toEqual(["Délibérations", "Délibérations"]);
+    expect(report.unknownDecisions).toEqual([{ normalizedKey: "DELIBERATIONS", rawValue: "Délibérations", count: 2 }]);
+    expect(lookup.findResolved).toHaveBeenCalledWith(["DELIBERATIONS"]);
   });
 
   it("applies a saved custom decision mapping automatically and preserves the original wording", async () => {

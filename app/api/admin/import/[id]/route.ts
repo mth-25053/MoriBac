@@ -18,6 +18,27 @@ import { importActionSchema } from "@/lib/validation";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+/** Lightweight progress poll for a large in-flight or resumable import - never touches the workbook or the DB write path. */
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await authorizeMutation(request);
+  if ("error" in auth) return auth.error;
+  const { id } = await params;
+  try {
+    const batch = await db.importBatch.findUnique({
+      where: { id },
+      select: { status: true, totalRows: true, validRows: true, rowsImported: true }
+    });
+    if (!batch) return apiError("BATCH_NOT_FOUND", 404);
+    return NextResponse.json({
+      status: batch.status,
+      totalRows: batch.validRows,
+      rowsImported: batch.status === "IMPORTED" ? batch.validRows : batch.rowsImported
+    });
+  } catch (error) {
+    return databaseUnavailable(error, "import-progress");
+  }
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const reqId = requestId(request);
   const auth = await authorizeMutation(request, reqId);
@@ -44,7 +65,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const decisionMappingRepository = new DecisionMappingRepository();
     const report = await parseExcel(stored.buffer, resolved.mapping, inspection, decisionMappingRepository);
     if (report.checksum !== batch.checksum) return apiError("CANNOT_RESUME_BATCH", 409);
-    if (report.invalidRows || report.unknownDecisions.length) return apiError("CANNOT_RESUME_BATCH", 409);
+    if (report.invalidRows) return apiError("CANNOT_RESUME_BATCH", 409);
 
     await insertCandidates({ examYearId: batch.examYearId, batchId: batch.id, rows: report.rows });
     await deleteImportUpload(batch.adminId, stored.uploadId).catch(() => undefined);

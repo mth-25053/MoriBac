@@ -5,13 +5,13 @@ import { normalizeHeader } from "@/lib/excel/header-normalizer";
 import type { UnknownDecision } from "@/lib/excel/types";
 
 export type DecisionMappingLookup = {
-  findResolved: (normalizedKeys: string[]) => Promise<Map<string, DecisionValue>>;
+  findResolved: (normalizedKeys: string[]) => Promise<Map<string, string>>;
 };
 
 export class DecisionMappingRepository implements DecisionMappingLookup {
   constructor(private readonly database = db) {}
 
-  async findResolved(normalizedKeys: string[]): Promise<Map<string, DecisionValue>> {
+  async findResolved(normalizedKeys: string[]): Promise<Map<string, string>> {
     if (!normalizedKeys.length) return new Map();
     const rows = await withDatabaseRetry(
       () => this.database.decisionMapping.findMany({
@@ -21,7 +21,7 @@ export class DecisionMappingRepository implements DecisionMappingLookup {
       "decision-mapping-read",
       { maxAttempts: 3, timeoutMs: 12_000 }
     );
-    return new Map(rows.map((row) => [row.normalizedKey, row.decision as DecisionValue]));
+    return new Map(rows.map((row) => [row.normalizedKey, row.decision as string]));
   }
 
   async recordUnknown(entries: UnknownDecision[]) {

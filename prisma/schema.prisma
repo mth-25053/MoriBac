@@ -8,14 +8,6 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-enum Decision {
-  ADMIS
-  SESSIONNAIRE
-  REDOUBLE
-  ABSENT
-  ANNULE
-}
-
 enum ImportStatus {
   VALIDATED
   IMPORTED
@@ -76,7 +68,7 @@ model Candidate {
   fullName         String
   series           String
   average          Decimal     @db.Decimal(5, 2)
-  decision         Decision
+  decision         String
   officialDecision String?
   wilaya           String?
   examCenter       String?
@@ -105,22 +97,23 @@ model Candidate {
 }
 
 model ImportBatch {
-  id          String        @id @default(cuid())
-  fileName    String
-  checksum    String        @unique
-  status      ImportStatus
-  totalRows   Int
-  validRows   Int
-  invalidRows Int
-  importedAt  DateTime?
-  createdAt   DateTime      @default(now())
-  adminId     String
-  examYearId  String
-  uploadId    String?
-  admin       Admin         @relation(fields: [adminId], references: [id], onDelete: Restrict)
-  examYear    ExamYear      @relation(fields: [examYearId], references: [id], onDelete: Cascade)
-  candidates  Candidate[]
-  errors      ImportError[]
+  id           String        @id @default(cuid())
+  fileName     String
+  checksum     String        @unique
+  status       ImportStatus
+  totalRows    Int
+  validRows    Int
+  invalidRows  Int
+  rowsImported Int           @default(0)
+  importedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  adminId      String
+  examYearId   String
+  uploadId     String?
+  admin        Admin         @relation(fields: [adminId], references: [id], onDelete: Restrict)
+  examYear     ExamYear      @relation(fields: [examYearId], references: [id], onDelete: Cascade)
+  candidates   Candidate[]
+  errors       ImportError[]
 
   @@index([examYearId, createdAt])
   @@index([adminId])
@@ -153,13 +146,13 @@ model ExcelMapping {
 }
 
 model DecisionMapping {
-  id            String    @id @default(cuid())
-  normalizedKey String    @unique
+  id            String   @id @default(cuid())
+  normalizedKey String   @unique
   rawValue      String
-  decision      Decision?
-  occurrences   Int       @default(1)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  decision      String?
+  occurrences   Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([decision])
 }

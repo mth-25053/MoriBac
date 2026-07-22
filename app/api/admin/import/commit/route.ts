@@ -63,10 +63,10 @@ export async function POST(request: Request) {
     const report = await parseExcel(input.buffer, resolved.mapping, inspection, decisionMappingRepository, new KnownSeriesRepository());
     if (report.checksum !== expectedChecksum) return apiError("FILE_CHANGED_AFTER_PREVIEW", 409, { requestId: id });
 
-    stage = "unknown-decision-check";
+    // Informational only, never blocking - see the identical comment in the preview route.
+    stage = "unknown-decision-record";
     if (report.unknownDecisions.length) {
-      await decisionMappingRepository.recordUnknown(report.unknownDecisions);
-      return apiError("UNKNOWN_DECISIONS_REQUIRE_MAPPING", 409, { unknownDecisions: report.unknownDecisions, requestId: id });
+      await decisionMappingRepository.recordUnknown(report.unknownDecisions).catch(() => undefined);
     }
 
     stage = "mapping-save";

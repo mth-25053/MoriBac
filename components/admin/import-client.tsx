@@ -1,30 +1,31 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { MappingWizard, canonicalFieldLabel } from "@/components/admin/mapping-wizard";
-import { UnknownDecisionsResolver } from "@/components/admin/unknown-decisions-resolver";
 import type { AdminDictionary } from "@/lib/admin-i18n";
-import type { DecisionValue } from "@/lib/constants";
 import { csrfFromDocument } from "@/lib/csrf-client";
 import { DIRECT_UPLOAD_LIMIT, IMPORT_CHUNK_SIZE } from "@/lib/import-upload-config";
-import { canonicalFields, type CanonicalField, type ColumnMapping, type DetectedColumn, type NewSeries, type UnknownDecision } from "@/lib/excel/types";
+import { canonicalFields, type CanonicalField, type ColumnMapping, type DecisionSample, type DetectedColumn, type DuplicateNumber, type NewSeries, type UnknownDecision } from "@/lib/excel/types";
 import type { Locale } from "@/lib/i18n";
 
 type Report = {
   mappingRequired: false;
-  unknownDecisionsRequired: false;
   checksum: string;
   mapping: ColumnMapping;
   mappingSource: "automatic" | "saved" | "manual";
   sheetName: string;
   sheetsScanned: number;
+  batchId: string;
   totalRows: number;
   validRows: number;
   invalidRows: number;
   preview: Record<string, unknown>[];
   errors: { rowNumber: number; field?: string; message: string }[];
   newSeries: NewSeries[];
+  unknownDecisions: UnknownDecision[];
+  duplicateNumbers: DuplicateNumber[];
+  decisionSummary: DecisionSample[];
 };
 
 type MappingRequest = {
@@ -37,27 +38,35 @@ type MappingRequest = {
   missingRequired: CanonicalField[];
 };
 
-type UnknownDecisionsRequest = {
-  mappingRequired: false;
-  unknownDecisionsRequired: true;
-  unknownDecisions: UnknownDecision[];
-  checksum: string;
-};
+type Progress = { status: "VALIDATED" | "IMPORTED" | "FAILED"; totalRows: number; rowsImported: number };
 
 export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: Locale }) {
   const [file, setFile] = useState<File | null>(null);
   const [year, setYear] = useState(new Date().getFullYear());
   const [report, setReport] = useState<Report | null>(null);
   const [mappingRequest, setMappingRequest] = useState<MappingRequest | null>(null);
-  const [unknownDecisionsRequest, setUnknownDecisionsRequest] = useState<UnknownDecisionsRequest | null>(null);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<Progress | null>(null);
   const uploadRef = useRef<{ file: File; uploadId: string } | null>(null);
 
   function resetResult() {
     setReport(null);
     setMappingRequest(null);
-    setUnknownDecisionsRequest(null);
+    setProgress(null);
   }
+
+  useEffect(() => {
+    if (!loading || !report?.batchId) return;
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/admin/import/${report.batchId}`, { headers: { "x-csrf-token": csrfFromDocument() } });
+        if (response.ok) setProgress(await response.json());
+      } catch {
+        // A failed progress poll must never interrupt the actual import request in flight.
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [loading, report?.batchId]);
 
   async function parsedResponse(response: Response) {
     const text = await response.text();
@@ -174,48 +183,21 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
     if (!data) return;
     if (data.mappingRequired) {
       setReport(null);
-      setUnknownDecisionsRequest(null);
       setMappingRequest(data as MappingRequest);
-    } else if (data.unknownDecisionsRequired) {
-      setReport(null);
-      setMappingRequest(null);
-      setUnknownDecisionsRequest(data as UnknownDecisionsRequest);
     } else {
       setMappingRequest(null);
-      setUnknownDecisionsRequest(null);
       setReport(data as Report);
     }
   }
 
-  async function resolveUnknownDecisions(resolutions: { rawValue: string; decision: DecisionValue }[]) {
-    setLoading(true);
-    for (const resolution of resolutions) {
-      const response = await fetch("/api/admin/decision-mappings", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-csrf-token": csrfFromDocument() },
-        body: JSON.stringify(resolution)
-      });
-      if (!response.ok) {
-        const data = await parsedResponse(response);
-        const code = typeof data.error === "string" ? data.error : "INVALID_SERVER_RESPONSE";
-        toast.error(translatedApiError(code, dict, locale));
-        setLoading(false);
-        return;
-      }
-    }
-    toast.success(dict.mappingSaved);
-    setUnknownDecisionsRequest(null);
-    setLoading(false);
-    await preview();
-  }
-
   async function commit() {
+    setProgress(null);
     const data = await request("/api/admin/import/commit");
     if (data) {
       toast.success(`${dict.imported}: ${data.imported}`);
       setReport(null);
       setMappingRequest(null);
-      setUnknownDecisionsRequest(null);
+      setProgress(null);
       setFile(null);
       uploadRef.current = null;
     }
@@ -244,21 +226,20 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
       onConfirm={preview}
     />}
 
-    {unknownDecisionsRequest && <UnknownDecisionsResolver
-      key={unknownDecisionsRequest.checksum}
-      dict={dict}
-      unknownDecisions={unknownDecisionsRequest.unknownDecisions}
-      loading={loading}
-      onConfirm={resolveUnknownDecisions}
-    />}
-
     {report && <section className="mt-7 space-y-5">
       <p className="muted text-xs">{locale === "ar" ? `الورقة: ${report.sheetName} (من أصل ${report.sheetsScanned} ورقة تم فحصها)` : `Feuille : ${report.sheetName} (${report.sheetsScanned} feuille(s) analysée(s))`}</p>
       <div className="grid grid-cols-3 gap-3">{[[dict.totalRows, report.totalRows], [dict.validRows, report.validRows], [dict.invalidRows, report.invalidRows]].map(([label, value]) => <div className="surface p-4" key={label}><b className="text-2xl">{value}</b><p className="muted text-xs">{label}</p></div>)}</div>
       {report.newSeries.length > 0 && <div className="surface p-4" role="status"><p className="font-bold">{dict.newSeriesDetected}</p><p className="muted mt-1 text-sm">{report.newSeries.map((entry) => `${entry.series} (${entry.count})`).join(" · ")}</p></div>}
+      {report.unknownDecisions.length > 0 && <div className="surface p-4" role="status"><p className="font-bold">{dict.unknownDecisionsDetected}</p><p className="muted mt-1 text-sm">{report.unknownDecisions.map((entry) => `${entry.rawValue} (${entry.count})`).join(" · ")}</p></div>}
+      {report.duplicateNumbers.length > 0 && <div className="surface p-4" role="status"><p className="font-bold text-[var(--danger)]">{dict.duplicateNumber}</p><p className="muted mt-1 text-sm">{report.duplicateNumbers.map((entry) => `${entry.candidateNumber} (${entry.count})`).join(" · ")}</p></div>}
+      {report.decisionSummary.length > 0 && <div className="surface p-4"><p className="font-bold">{dict.decision}</p><p className="muted mt-1 text-sm">{report.decisionSummary.map((entry) => `${entry.value} (${entry.count})`).join(" · ")}</p></div>}
       {report.errors.length > 0 && <div className="surface p-5"><h2 className="font-black text-[var(--danger)]">{dict.errors}</h2><ul className="mt-3 max-h-64 overflow-auto text-sm">{report.errors.slice(0, 100).map((error, index) => <li className="border-b py-2" style={{ borderColor: "var(--line)" }} key={index}>#{error.rowNumber} · {error.field ? previewLabel(error.field, dict, locale) : ""}: {translatedError(error.message, dict)}</li>)}</ul></div>}
       <div className="surface overflow-hidden"><h2 className="p-5 font-black">{dict.preview}</h2><div className="overflow-x-auto"><table className="min-w-full text-sm"><thead className="bg-[var(--surface-2)]"><tr>{canonicalFields.map((field) => <th className="whitespace-nowrap p-3 text-start" key={field.key}>{previewLabel(field.key, dict, locale)}</th>)}</tr></thead><tbody>{report.preview.map((row, index) => <tr className="border-t" style={{ borderColor: "var(--line)" }} key={index}>{canonicalFields.map((field) => <td className="whitespace-nowrap p-3" key={field.key}>{previewValue(field.key, row[field.key], dict)}</td>)}</tr>)}</tbody></table></div></div>
       <button className="button" disabled={report.invalidRows > 0 || loading} onClick={commit}>{loading ? "…" : dict.commit}</button>
+      {loading && progress && <div className="surface p-4">
+        <div className="flex items-center justify-between text-sm font-bold"><span>{dict.importProgress}</span><span className="tabular-nums">{progress.rowsImported}/{progress.totalRows}</span></div>
+        <div className="mt-2 h-2 rounded-full bg-[var(--surface-2)]"><div className="h-2 rounded-full transition-all" style={{ width: `${progress.totalRows ? Math.min(100, (progress.rowsImported / progress.totalRows) * 100) : 0}%`, background: "var(--accent)" }} /></div>
+      </div>}
     </section>}
   </div>;
 }

@@ -13,7 +13,9 @@ export {
 export type {
   CanonicalField,
   ColumnMapping,
+  DecisionSample,
   DetectedColumn,
+  DuplicateNumber,
   ImportReport,
   NewSeries,
   ParsedCandidate,

@@ -5,8 +5,9 @@ import { normalizeHeader } from "@/lib/excel/header-normalizer";
 const aliases: Record<CanonicalField, string[]> = {
   candidateNumber: [
     "CANDIDATE NUMBER", "CANDIDATE NO", "CANDIDATE ID", "ROLL NUMBER", "ROLL NO", "REGISTRATION NUMBER", "MATRICULE",
-    "NUMBAC", "NUM BAC", "N BAC", "NUMERO BAC", "NUMERO CANDIDAT", "NUMERO DU CANDIDAT", "N° CANDIDAT", "NO CANDIDAT",
-    "CODE CANDIDAT", "IDENTIFIANT CANDIDAT", "رقم المترشح", "رقم الترشح", "رقم التسجيل", "رمز المترشح"
+    "NUMBAC", "NUM_BAC", "NUM BAC", "NUM-BAC", "N BAC", "NUMERO", "NUMERO BAC", "NUMERO CANDIDAT", "NUMERO DU CANDIDAT",
+    "N° CANDIDAT", "N CANDIDAT", "NO CANDIDAT", "CODE CANDIDAT", "IDENTIFIANT CANDIDAT",
+    "رقم المترشح", "رقم الترشح", "رقم التسجيل", "رمز المترشح"
   ],
   fullName: [
     "FULL NAME", "CANDIDATE NAME", "CANDIDATE FULL NAME", "NAME", "NOM", "NOM COMPLET", "NOM ET PRENOM", "NOM PRENOM",

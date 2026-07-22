@@ -1,5 +1,3 @@
-import type { DecisionValue } from "@/lib/constants";
-
 export const canonicalFields = [
   { key: "candidateNumber", label: "Candidate Number", required: true },
   { key: "fullName", label: "Full Name", required: true },
@@ -43,7 +41,7 @@ export type ParsedCandidate = {
   fullName: string;
   series: string;
   average: number;
-  decision: DecisionValue;
+  decision: string;
   officialDecision: string | null;
   wilaya: string | null;
   examCenter: string | null;
@@ -71,6 +69,16 @@ export type NewSeries = {
   count: number;
 };
 
+export type DuplicateNumber = {
+  candidateNumber: string;
+  count: number;
+};
+
+export type DecisionSample = {
+  value: string;
+  count: number;
+};
+
 export type ImportReport = {
   checksum: string;
   totalRows: number;
@@ -81,6 +89,8 @@ export type ImportReport = {
   errors: RowError[];
   unknownDecisions: UnknownDecision[];
   newSeries: NewSeries[];
+  duplicateNumbers: DuplicateNumber[];
+  decisionSummary: DecisionSample[];
   inspection: WorkbookInspection;
   mapping: ColumnMapping;
 };

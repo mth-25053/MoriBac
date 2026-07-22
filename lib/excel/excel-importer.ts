@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import ExcelJS from "exceljs";
-import { DECISIONS, MAX_UPLOAD_SIZE, type DecisionValue } from "@/lib/constants";
+import { MAX_UPLOAD_SIZE } from "@/lib/constants";
+import { classifyDecision } from "@/lib/decision";
 import { candidateNumberText, cellText } from "@/lib/excel/cell-value";
 import { DecisionMappingRepository, type DecisionMappingLookup } from "@/lib/excel/decision-mapping-repository";
 import { HeaderDetector } from "@/lib/excel/header-detector";
@@ -26,50 +27,6 @@ function cleanText(value: string) {
 function optionalText(value: string) {
   const cleaned = cleanText(value);
   return cleaned || null;
-}
-
-function isCancellationDecision(key: string) {
-  const arabicExam = "\u0627\u0645\u062a\u062d\u0627\u0646";
-  const arabicCancelled = "\u0645\u0644\u063a";
-  const arabicCancellation = "\u0627\u0644\u063a\u0627\u0621";
-  return key === "\u0645\u0644\u063a\u0649"
-    || key === "\u0627\u0644\u063a\u0627\u0621\u0627\u0644\u0627\u0645\u062a\u062d\u0627\u0646"
-    || (key.includes(arabicExam) && (key.includes(arabicCancelled) || key.includes(arabicCancellation)))
-    || (key.includes("EXAMEN") && (key.includes("ANNULE") || key.includes("ANNULATION")))
-    || key.startsWith("ANNULE")
-    || key.startsWith("CANCELLED");
-}
-function mapDecision(value: string): DecisionValue | null {
-  const key = normalizeHeader(value);
-  const values: Record<string, DecisionValue> = {
-    ADMIS: "ADMIS",
-    ADMITTED: "ADMIS",
-    PASSED: "ADMIS",
-    ناجح: "ADMIS",
-    SESSIONNAIRE: "SESSIONNAIRE",
-    SESSIONCOMPLEMENTAIRE: "SESSIONNAIRE",
-    SUPPLEMENTARY: "SESSIONNAIRE",
-    الدورةالتكميلية: "SESSIONNAIRE",
-    REDOUBLE: "REDOUBLE",
-    NONADMIS: "REDOUBLE",
-    FAILED: "REDOUBLE",
-    راسب: "REDOUBLE",
-    ABSENT: "ABSENT",
-    غائب: "ABSENT",
-    ANNULE: "ANNULE",
-    ANNULEE: "ANNULE",
-    CANCELLED: "ANNULE",
-    "\u0627\u0644\u063a\u0627\u0621\u0627\u0644\u0627\u0645\u062a\u062d\u0627\u0646": "ANNULE",
-    ملغى: "ANNULE"
-  };
-  const mapped = values[key]
-    ?? (key.startsWith("ADMIS") ? "ADMIS" : null)
-    ?? (key.startsWith("AJOURNE") ? "REDOUBLE" : null)
-    ?? (key.startsWith("SESSIONNAIRE") ? "SESSIONNAIRE" : null)
-    ?? (key.startsWith("ABSENT") || key.startsWith("ABSCENT") ? "ABSENT" : null)
-    ?? (isCancellationDecision(key) ? "ANNULE" : null)
-    ?? key;
-  return DECISIONS.includes(mapped as DecisionValue) ? mapped as DecisionValue : null;
 }
 
 function mappingFields(value: unknown): ColumnMapping {
@@ -113,7 +70,7 @@ async function loadWorkbook(buffer: Buffer) {
   return workbook;
 }
 
-function finalizeCandidate(raw: Record<string, unknown>, number: string, average: number, decision: DecisionValue): ParsedCandidate {
+function finalizeCandidate(raw: Record<string, unknown>, number: string, average: number, decision: string): ParsedCandidate {
   return {
     candidateNumber: number,
     fullName: cleanText(String(raw.fullName)),
@@ -160,6 +117,7 @@ export class ExcelImporter {
     const seen = new Set<string>();
     const mappedColumns = Object.values(mapping).filter((column): column is number => Boolean(column));
     const pendingByKey = new Map<string, PendingDecisionGroup>();
+    const decisionCounts = new Map<string, number>();
     let totalRows = 0;
 
     for (let rowNumber = inspection.headerRow + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
@@ -187,25 +145,30 @@ export class ExcelImporter {
       }
       const average = Number(String(raw.average ?? "").replace(",", "."));
       if (!Number.isFinite(average) || average < 0 || average > 20) rowErrors.push({ rowNumber, field: "average", message: "Average must be between 0 and 20", rawData: raw });
-      if (number && seen.has(number)) rowErrors.push({ rowNumber, field: "candidateNumber", message: "Duplicate candidate number in file", rawData: raw });
+      const isDuplicateNumber = Boolean(number && seen.has(number));
+      if (isDuplicateNumber) rowErrors.push({ rowNumber, field: "candidateNumber", message: "Duplicate candidate number in file", rawData: raw });
       seen.add(number);
 
       const decisionText = String(raw.decision ?? "");
-      const decision = mapDecision(decisionText);
+      if (!decisionText.trim()) {
+        // A blank decision is a missing-value problem, not an unrecognized wording - never defer it.
+        rowErrors.push({ rowNumber, field: "decision", message: "Unknown decision", rawData: raw });
+        errors.push(...rowErrors);
+        continue;
+      }
+      decisionCounts.set(cleanText(decisionText), (decisionCounts.get(cleanText(decisionText)) ?? 0) + 1);
+
+      const decision = classifyDecision(decisionText);
       if (decision) {
         if (rowErrors.length) { errors.push(...rowErrors); continue; }
         rows.push(finalizeCandidate(raw, number, average, decision));
         continue;
       }
-      if (!decisionText.trim()) {
-        // A blank decision is a missing-value problem, not an unrecognized wording - never defer it for admin resolution.
-        rowErrors.push({ rowNumber, field: "decision", message: "Unknown decision", rawData: raw });
-        errors.push(...rowErrors);
-        continue;
-      }
 
-      // Non-blank text the hardcoded rules don't recognize: defer to the administrator-maintained mapping
-      // instead of rejecting the row or guessing. Resolved after the full pass, in one batched lookup.
+      // Text the hardcoded rules don't recognize: defer to the administrator-maintained synonym
+      // table, resolved after the full pass in one batched lookup. A value never seen before -
+      // known or not - is NEVER rejected: if it stays unresolved, the row is still kept, with the
+      // raw text stored and displayed exactly as written (see the pass-through below).
       const normalizedKey = normalizeHeader(decisionText);
       const group = pendingByKey.get(normalizedKey) ?? { rawValue: cleanText(decisionText), entries: [] };
       group.entries.push({ rowNumber, raw, rowErrors, average, number });
@@ -214,13 +177,16 @@ export class ExcelImporter {
 
     const unknownDecisions: UnknownDecision[] = [];
     if (pendingByKey.size) {
-      const resolved = await decisionLookup.findResolved([...pendingByKey.keys()]);
+      let resolved = new Map<string, string>();
+      try {
+        resolved = await decisionLookup.findResolved([...pendingByKey.keys()]);
+      } catch {
+        // The optional synonym table being unavailable must never block a real import -
+        // every pending group simply falls through to the raw-text pass-through below.
+      }
       for (const [normalizedKey, group] of pendingByKey) {
-        const decision = resolved.get(normalizedKey);
-        if (!decision) {
-          unknownDecisions.push({ normalizedKey, rawValue: group.rawValue, count: group.entries.length });
-          continue;
-        }
+        const decision = resolved.get(normalizedKey) ?? group.rawValue;
+        if (!resolved.has(normalizedKey)) unknownDecisions.push({ normalizedKey, rawValue: group.rawValue, count: group.entries.length });
         for (const entry of group.entries) {
           if (entry.rowErrors.length) { errors.push(...entry.rowErrors); continue; }
           rows.push(finalizeCandidate(entry.raw, entry.number, entry.average, decision));
@@ -248,6 +214,21 @@ export class ExcelImporter {
       .map((series) => ({ series, count: seriesCounts.get(series) ?? 0 }))
       .sort((left, right) => right.count - left.count);
 
+    const duplicateCounts = new Map<string, number>();
+    for (const error of errors) {
+      if (error.field !== "candidateNumber") continue;
+      const number = String(error.rawData?.candidateNumber ?? "");
+      if (number) duplicateCounts.set(number, (duplicateCounts.get(number) ?? 0) + 1);
+    }
+    const duplicateNumbers = [...duplicateCounts.entries()]
+      .map(([candidateNumber, count]) => ({ candidateNumber, count: count + 1 }))
+      .sort((left, right) => right.count - left.count);
+
+    const decisionSummary = [...decisionCounts.entries()]
+      .map(([value, count]) => ({ value, count }))
+      .sort((left, right) => right.count - left.count)
+      .slice(0, 20);
+
     const invalidRows = new Set(errors.map((error) => error.rowNumber)).size;
     return {
       checksum: createHash("sha256").update(buffer).digest("hex"),
@@ -259,6 +240,8 @@ export class ExcelImporter {
       errors,
       unknownDecisions,
       newSeries,
+      duplicateNumbers,
+      decisionSummary,
       inspection,
       mapping
     };

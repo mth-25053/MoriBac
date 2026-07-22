@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   candidateFindFirst: vi.fn(),
   candidateCreateMany: vi.fn(),
   importBatchUpdate: vi.fn(),
+  importBatchFindUniqueOrThrow: vi.fn(),
   transaction: vi.fn()
 }));
 
@@ -12,7 +13,7 @@ vi.mock("@/lib/db", () => ({
   db: {
     $transaction: mocks.transaction,
     candidate: { findFirst: mocks.candidateFindFirst, createMany: mocks.candidateCreateMany },
-    importBatch: { update: mocks.importBatchUpdate }
+    importBatch: { update: mocks.importBatchUpdate, findUniqueOrThrow: mocks.importBatchFindUniqueOrThrow }
   }
 }));
 
@@ -57,6 +58,7 @@ describe("resuming a validated import batch without re-uploading", () => {
 describe("insertCandidates", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.importBatchFindUniqueOrThrow.mockResolvedValue({ rowsImported: 0 });
     mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => callback({
       candidate: { findFirst: mocks.candidateFindFirst, createMany: mocks.candidateCreateMany },
       importBatch: { update: mocks.importBatchUpdate }
@@ -71,14 +73,29 @@ describe("insertCandidates", () => {
     await insertCandidates({ examYearId: "year-1", batchId: "batch-1", rows: [candidate("00001"), candidate("00002")] });
 
     expect(mocks.candidateCreateMany).toHaveBeenCalledTimes(1);
-    expect(mocks.importBatchUpdate).toHaveBeenCalledWith({ where: { id: "batch-1" }, data: expect.objectContaining({ status: "IMPORTED" }) });
+    expect(mocks.candidateCreateMany).toHaveBeenCalledWith(expect.objectContaining({ skipDuplicates: true }));
+    expect(mocks.importBatchUpdate).toHaveBeenLastCalledWith({ where: { id: "batch-1" }, data: expect.objectContaining({ status: "IMPORTED" }) });
   });
 
-  it("throws DuplicateCandidateError and never inserts when a candidate number already exists", async () => {
+  it("resumes from the last committed chunk instead of redoing already-inserted rows", async () => {
+    mocks.candidateFindFirst.mockResolvedValue(null);
+    mocks.importBatchFindUniqueOrThrow.mockResolvedValue({ rowsImported: 2000 });
+    mocks.candidateCreateMany.mockResolvedValue({ count: 1 });
+    mocks.importBatchUpdate.mockResolvedValue({});
+
+    const rows = Array.from({ length: 2001 }, (_, index) => candidate(String(index).padStart(5, "0")));
+    await insertCandidates({ examYearId: "year-1", batchId: "batch-1", rows });
+
+    expect(mocks.candidateCreateMany).toHaveBeenCalledTimes(1);
+    expect(mocks.candidateCreateMany.mock.calls[0][0].data).toHaveLength(1);
+  });
+
+  it("throws DuplicateCandidateError and never inserts when a candidate number already exists under a different batch", async () => {
     mocks.candidateFindFirst.mockResolvedValue({ candidateNumber: "00001" });
 
     await expect(insertCandidates({ examYearId: "year-1", batchId: "batch-1", rows: [candidate("00001")] }))
       .rejects.toThrow(DuplicateCandidateError);
+    expect(mocks.candidateFindFirst.mock.calls[0][0].where).toMatchObject({ importBatchId: { not: "batch-1" } });
     expect(mocks.candidateCreateMany).not.toHaveBeenCalled();
     expect(mocks.importBatchUpdate).not.toHaveBeenCalled();
   });

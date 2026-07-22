@@ -1,4 +1,5 @@
 import { Award, Building2, Hash, ListOrdered, MapPin, School, type LucideIcon } from "lucide-react";
+import { classifyDecision } from "@/lib/decision";
 import type { Dictionary } from "@/lib/i18n";
 import { formatAverage } from "@/lib/format";
 import { SuccessCelebration } from "@/components/success-celebration";
@@ -8,14 +9,14 @@ export type CandidateView = {
   fullName: string;
   series: string;
   average: number;
-  decision: "ADMIS" | "SESSIONNAIRE" | "REDOUBLE" | "ABSENT" | "ANNULE";
+  decision: string;
   wilaya: string | null;
   examCenter: string | null;
   school: string | null;
   rank: number | null;
 };
 
-const badgeToneFor: Record<CandidateView["decision"], string> = {
+const badgeToneFor: Record<"ADMIS" | "SESSIONNAIRE" | "REDOUBLE" | "ABSENT" | "ANNULE", string> = {
   ADMIS: "celebrate",
   SESSIONNAIRE: "calm",
   REDOUBLE: "calm",
@@ -30,8 +31,10 @@ export function ResultCard({ candidate, dict }: { candidate: CandidateView; dict
     [Building2, dict.center, candidate.examCenter],
     [School, dict.school, candidate.school]
   ];
-  const celebrating = candidate.decision === "ADMIS";
-  const badgeTone = badgeToneFor[candidate.decision];
+  const known = classifyDecision(candidate.decision);
+  const celebrating = known === "ADMIS";
+  const badgeTone = known ? badgeToneFor[known] : "calm";
+  const decisionLabel = known ? dict.decisions[known] : candidate.decision;
 
   return <article className={`reveal surface relative overflow-hidden${celebrating ? " glow" : ""}`} aria-labelledby="candidate-name">
     {celebrating && <SuccessCelebration />}
@@ -42,7 +45,7 @@ export function ResultCard({ candidate, dict }: { candidate: CandidateView; dict
 
       <div className="mt-6 text-6xl font-black tabular-nums leading-none text-[var(--accent)] sm:text-7xl" dir="ltr">{formatAverage(candidate.average)}</div>
 
-      <span className={`badge mt-5 text-base ${badgeTone}`}>{dict.decisions[candidate.decision]}</span>
+      <span className={`badge mt-5 text-base ${badgeTone}`}><bdi>{decisionLabel}</bdi></span>
       {celebrating && <p className="mt-3 text-lg font-black" style={{ color: "var(--celebrate)" }}>{dict.congratulations}</p>}
     </div>
 

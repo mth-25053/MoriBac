@@ -79,21 +79,12 @@ export async function POST(request: Request) {
     stage = "mapping-save";
     await repository.save(inspection, resolved.mapping);
 
-    stage = "unknown-decision-check";
+    // Informational only, never blocking: an unrecognized decision is still imported with its
+    // raw text preserved. Recording it here just lets an admin optionally teach a permanent
+    // synonym later via the Decisions page - it never gates this or any future import.
+    stage = "unknown-decision-record";
     if (report.unknownDecisions.length) {
-      await decisionMappingRepository.recordUnknown(report.unknownDecisions);
-      logRequest(id, "import-preview", "unknown-decisions-required", {
-        source: input.source,
-        unknownDecisionCount: report.unknownDecisions.length,
-        elapsedMs: Date.now() - startedAt
-      });
-      return NextResponse.json({
-        mappingRequired: false,
-        unknownDecisionsRequired: true,
-        unknownDecisions: report.unknownDecisions,
-        checksum: report.checksum,
-        requestId: id
-      });
+      await decisionMappingRepository.recordUnknown(report.unknownDecisions).catch(() => undefined);
     }
 
     stage = "preview-validation-save";
@@ -117,7 +108,6 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({
       mappingRequired: false,
-      unknownDecisionsRequired: false,
       mappingSource: resolved.source,
       mapping: resolved.mapping,
       sheetName: inspection.sheetName,
@@ -133,6 +123,9 @@ export async function POST(request: Request) {
       errors: errorSummary(report),
       errorCount: report.errors.length,
       newSeries: report.newSeries,
+      unknownDecisions: report.unknownDecisions,
+      duplicateNumbers: report.duplicateNumbers,
+      decisionSummary: report.decisionSummary,
       requestId: id
     });
   } catch (error) {
