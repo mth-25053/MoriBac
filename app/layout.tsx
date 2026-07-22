@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { Manrope, Noto_Kufi_Arabic } from "next/font/google";
 import { Toaster } from "sonner";
 import "@/app/globals.css";
+import { VisitorTracker } from "@/components/visitor-tracker";
 import { LANGUAGE_COOKIE, THEME_COOKIE } from "@/lib/constants";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-latin", display: "swap" });
@@ -13,25 +14,25 @@ const description = "Plateforme bilingue de consultation des résultats du bacca
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: { default: "MoriBac — Résultats du Baccalauréat", template: "%s — MoriBac" },
+  title: { default: "Mth_Bac — Résultats du Baccalauréat", template: "%s — Mth_Bac" },
   description,
-  keywords: ["MoriBac", "baccalauréat mauritanien", "résultats BAC Mauritanie", "بكالوريا موريتانيا", "نتائج البكالوريا", "BAC Mauritanie"],
-  applicationName: "MoriBac",
+  keywords: ["Mth_Bac", "baccalauréat mauritanien", "résultats BAC Mauritanie", "بكالوريا موريتانيا", "نتائج البكالوريا", "BAC Mauritanie"],
+  applicationName: "Mth_Bac",
   category: "education",
   alternates: { canonical: "/" },
   robots: { index: true, follow: true },
   openGraph: {
     type: "website",
     url: siteUrl,
-    siteName: "MoriBac",
+    siteName: "Mth_Bac",
     locale: "ar_MR",
     alternateLocale: "fr_MR",
-    title: "MoriBac — Résultats du Baccalauréat",
+    title: "Mth_Bac — Résultats du Baccalauréat",
     description
   },
   twitter: {
     card: "summary",
-    title: "MoriBac — Résultats du Baccalauréat",
+    title: "Mth_Bac — Résultats du Baccalauréat",
     description
   }
 };
@@ -41,11 +42,11 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, them
 const structuredData = {
   "@context": "https://schema.org",
   "@type": "WebSite",
-  name: "MoriBac",
+  name: "Mth_Bac",
   url: siteUrl,
   description,
   inLanguage: ["ar", "fr"],
-  publisher: { "@type": "Organization", name: "MoriBac" }
+  publisher: { "@type": "Organization", name: "Mth_Bac" }
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -58,7 +59,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script dangerouslySetInnerHTML={{ __html: `(()=>{try{const t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark')}catch{}})()` }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
       </head>
-      <body>{children}<Toaster position={locale === "ar" ? "bottom-left" : "bottom-right"} richColors /></body>
+      <body>{children}<Toaster position={locale === "ar" ? "bottom-left" : "bottom-right"} richColors /><VisitorTracker /></body>
     </html>
   );
 }

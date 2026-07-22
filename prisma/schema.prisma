@@ -197,3 +197,33 @@ model KnownSeries {
   code      String   @id
   createdAt DateTime @default(now())
 }
+
+model PageView {
+  id        String   @id @default(cuid())
+  path      String
+  visitorId String
+  country   String?
+  region    String?
+  city      String?
+  browser   String?
+  os        String?
+  device    String?
+  language  String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([visitorId, createdAt])
+  @@index([country])
+}
+
+model SearchLog {
+  id              String   @id @default(cuid())
+  candidateNumber String
+  year            Int
+  found           Boolean
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([candidateNumber])
+  @@index([year])
+}

@@ -1,6 +1,6 @@
 import { hit } from "@/lib/sliding-window";
 
-export type AlertKind = "database" | "stuck-batch" | "cleanup-failed" | "http-5xx" | "import-failure" | "audit-log-failure";
+export type AlertKind = "database" | "stuck-batch" | "cleanup-failed" | "http-5xx" | "import-failure" | "audit-log-failure" | "analytics-failure";
 
 /**
  * Structured alert emission. Always logs a clearly tagged line (works today with

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { recordSearch } from "@/lib/analytics";
 import { databaseUnavailable } from "@/lib/database-errors";
 import { serializeCandidate } from "@/lib/format";
 import { isRateLimited } from "@/lib/rate-limit";
@@ -20,6 +21,8 @@ export async function GET(request: Request) {
     const rank = candidate && candidate.decision !== "ANNULE"
       ? await getCandidateRank(year.id, candidate.series, Number(candidate.average))
       : null;
+
+    recordSearch(parsed.data.number, year.year, Boolean(candidate));
 
     return NextResponse.json(
       { candidate: candidate ? { ...serializeCandidate(candidate), rank } : null, year: year.year },

@@ -41,3 +41,7 @@ export const importActionSchema = z.object({ action: z.literal("complete") }).st
 export const knownSeriesCreateSchema = z.object({
   code: z.string().trim().min(1).max(100)
 }).strict();
+
+export const pageViewSchema = z.object({
+  path: z.string().trim().min(1).max(200)
+}).strict();

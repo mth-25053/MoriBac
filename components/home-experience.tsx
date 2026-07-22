@@ -1,6 +1,6 @@
 "use client";
-import { Search } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { GraduationCap, Search } from "lucide-react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import type { Dictionary, Locale } from "@/lib/i18n";
 import { ResultCard, type CandidateView } from "@/components/result-card";
 
@@ -13,6 +13,8 @@ export function HomeExperience({ dict, locale }: { dict: Dictionary; locale: Loc
   const [searchError, setSearchError] = useState("");
   const [candidate, setCandidate] = useState<CandidateView | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
+  const inFlight = useRef<AbortController | null>(null);
+  const lastQuery = useRef("");
 
   useEffect(() => {
     let cancelled = false;
@@ -34,20 +36,29 @@ export function HomeExperience({ dict, locale }: { dict: Dictionary; locale: Loc
     setSearchError("");
     if (!clean) { setSearchError(dict.required); return; }
     if (!/^\d+$/.test(clean)) { setSearchError(dict.invalidNumber); return; }
+
+    const queryKey = `${clean}:${year}`;
+    if (searching && lastQuery.current === queryKey) return;
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
+    lastQuery.current = queryKey;
+
     setSearching(true);
     setCandidate(null);
     try {
       const query = new URLSearchParams({ number: clean });
       if (year) query.set("year", year);
-      const response = await fetch(`/api/public/search?${query}`);
+      const response = await fetch(`/api/public/search?${query}`, { signal: controller.signal });
       const data = await response.json();
       if (!response.ok) setSearchError(dict.serviceUnavailable);
       else if (!data.candidate) setSearchError(dict.notFound);
       else setCandidate(data.candidate);
-    } catch {
+    } catch (error) {
+      if ((error as { name?: string }).name === "AbortError") return;
       setSearchError(dict.serviceUnavailable);
     } finally {
-      setSearching(false);
+      if (inFlight.current === controller) setSearching(false);
     }
   }
 
@@ -58,10 +69,11 @@ export function HomeExperience({ dict, locale }: { dict: Dictionary; locale: Loc
   }
 
   return <>
-    <section className="shell flex flex-col items-center py-16 text-center sm:py-24">
-      <span className="eyebrow">{dict.heroEyebrow}</span>
-      <h1 className="mt-5 max-w-3xl text-5xl font-black leading-[1.08] sm:text-6xl lg:text-7xl">{dict.heroTitle}</h1>
-      <p className="muted mt-6 max-w-xl text-lg leading-8">{dict.heroText}</p>
+    <section className="shell flex flex-col items-center py-14 text-center sm:py-20">
+      <span className="grid size-16 place-items-center rounded-2xl text-white" style={{ background: "var(--accent)" }}><GraduationCap size={32} /></span>
+      <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">{dict.brand}</h1>
+      <p className="mt-1.5 text-xs font-bold" style={{ fontFamily: "var(--font-arabic)", color: "var(--muted)" }} dir="rtl" lang="ar">{dict.designCredit}</p>
+      <p className="muted mt-5 max-w-lg text-base leading-7 sm:text-lg">{dict.heroText}</p>
 
       {meta?.notices[locale] && <aside className="mt-8 max-w-xl rounded-xl border bg-[var(--accent-soft)] p-4 font-bold text-[var(--accent-strong)]" role="status">{meta.notices[locale]}</aside>}
 

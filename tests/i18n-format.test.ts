@@ -19,7 +19,7 @@ describe("localized result formatting", () => {
       expect(dictionaries.ar.decisions[decision]).toBeTruthy();
       expect(dictionaries.fr.decisions[decision]).toBeTruthy();
     }
-    expect(dictionaries.ar.decisions.ANNULE).toBe("إلغاء الامتحان");
-    expect(dictionaries.fr.decisions.ANNULE).toBe("Examen annulé");
+    expect(dictionaries.ar.decisions.ANNULE).toBe("⚪ ملغى");
+    expect(dictionaries.fr.decisions.ANNULE).toBe("⚪ Annulé");
   });
 });
