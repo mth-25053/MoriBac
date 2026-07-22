@@ -5,7 +5,7 @@ export type Locale = "ar" | "fr";
 
 export const dictionaries = {
   ar: {
-    brand: "Mth_Bac", designCredit: "تصميم وتطوير: المثنى ولد أحمد بابا", home: "الرئيسية", about: "عن المنصة", admin: "الإدارة",
+    brand: "Mth_Bac", designCredit: "تصميم وتطوير: المثنى ولد أحمد باب", home: "الرئيسية", about: "عن المنصة", admin: "الإدارة",
     heroText: "أدخل رقم مترشحك واحصل على نتيجتك فوراً.",
     searchTitle: "البحث عن مترشح", candidateNumber: "رقم المترشح", search: "بحث", searching: "جارٍ البحث…",
     searchHint: "أدخل رقم المترشح كما هو، بما في ذلك الأصفار في البداية.", required: "هذا الحقل مطلوب.", invalidNumber: "رقم المترشح غير صالح.", notFound: "لم يتم العثور على نتيجة منشورة لهذا الرقم.",
@@ -22,7 +22,7 @@ export const dictionaries = {
     rankLabel: "الترتيب في الشعبة"
   },
   fr: {
-    brand: "Mth_Bac", designCredit: "تصميم وتطوير: المثنى ولد أحمد بابا", home: "Accueil", about: "À propos", admin: "Administration",
+    brand: "Mth_Bac", designCredit: "تصميم وتطوير: المثنى ولد أحمد باب", home: "Accueil", about: "À propos", admin: "Administration",
     heroText: "Entrez votre numéro de candidat et obtenez votre résultat instantanément.",
     searchTitle: "Rechercher un candidat", candidateNumber: "Numéro du candidat", search: "Rechercher", searching: "Recherche…",
     searchHint: "Saisissez le numéro tel quel, y compris les zéros initiaux.", required: "Ce champ est obligatoire.", invalidNumber: "Numéro de candidat invalide.", notFound: "Aucun résultat publié ne correspond à ce numéro.",
