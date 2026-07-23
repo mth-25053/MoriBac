@@ -7,7 +7,6 @@ export function SiteFooter({ dict }: { dict: Dictionary }) {
       <p className="muted">© {new Date().getFullYear()} {dict.brand}. {dict.footer}</p>
       <div className="flex gap-6 font-bold">
         <Link href="/about" className="transition-colors hover:text-[var(--accent)]">{dict.about}</Link>
-        <Link href="/admin/login" className="muted transition-colors hover:text-[var(--accent)]">{dict.admin}</Link>
       </div>
     </div>
   </footer>;
