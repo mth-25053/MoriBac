@@ -3,8 +3,10 @@ import { GraduationCap, Search } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import type { Dictionary, Locale } from "@/lib/i18n";
 import { ResultCard, type CandidateView } from "@/components/result-card";
+import { RankingsSection } from "@/components/rankings/rankings-section";
+import type { FilterOptions } from "@/components/rankings/types";
 
-type Meta = { year: number | null; notices: { ar: string; fr: string }; years: { year: number; isDefault: boolean }[] };
+type Meta = { year: number | null; notices: { ar: string; fr: string }; years: { year: number; isDefault: boolean }[]; options: FilterOptions };
 
 export function HomeExperience({ dict, locale }: { dict: Dictionary; locale: Locale }) {
   const [number, setNumber] = useState("");
@@ -112,5 +114,7 @@ export function HomeExperience({ dict, locale }: { dict: Dictionary; locale: Loc
       <ResultCard candidate={candidate} dict={dict} />
       <div className="mt-6 text-center"><button className="button secondary" onClick={reset}>{dict.searchAgain}</button></div>
     </section>}
+
+    {meta?.year && <RankingsSection dict={dict} initialYear={meta.year} years={meta.years} initialOptions={meta.options} />}
   </>;
 }

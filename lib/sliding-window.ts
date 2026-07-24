@@ -19,12 +19,3 @@ export function hit(key: string, windowMs: number): number {
   return current.count;
 }
 
-export function peek(key: string, windowMs: number): number {
-  const current = windows.get(key);
-  if (!current || Date.now() - current.windowStart >= windowMs) return 0;
-  return current.count;
-}
-
-export function resetAll() {
-  windows.clear();
-}

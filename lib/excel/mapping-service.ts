@@ -2,7 +2,6 @@ import { missingRequiredFields, validateColumnMapping } from "@/lib/excel/excel-
 import { MappingRepository } from "@/lib/excel/mapping-repository";
 import type { ColumnMapping, WorkbookInspection } from "@/lib/excel/types";
 
-export type MappingSource = "manual" | "saved" | "automatic";
 export type MappingReader = { find: (inspection: WorkbookInspection) => Promise<ColumnMapping | null> };
 
 export async function resolveMapping(

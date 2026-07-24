@@ -50,36 +50,39 @@ function present(values: Array<string | null>) {
   return values.filter((value): value is string => Boolean(value));
 }
 
-export async function getFilterOptions(examYearId: string, params: { series?: string; wilaya?: string; center?: string }, database = db) {
+/**
+ * School and Exam Center are two independent, parallel drill-down paths off
+ * Wilaya (not chained through each other) - matches the public rankings UI,
+ * where the visitor picks exactly one of the two after selecting a wilaya.
+ */
+export async function getFilterOptions(examYearId: string, params: { series?: string; wilaya?: string }, database = db) {
   return withDatabaseRetry(async () => {
     const base = { examYearId, decision: { not: "ANNULE" as const } };
-    const seriesRows = await database.candidate.findMany({ where: base, distinct: ["series"], select: { series: true }, orderBy: { series: "asc" } });
-    if (!params.series) return { series: seriesRows.map((row) => row.series), wilayas: [], centers: [], schools: [] };
+    const seriesScope = params.series ? { ...base, series: params.series } : base;
 
     // The production pool deliberately has one connection. Keep these short reads
     // sequential so a single request cannot exhaust its own pool.
+    const seriesRows = await database.candidate.findMany({ where: base, distinct: ["series"], select: { series: true }, orderBy: { series: "asc" } });
     const wilayaRows = await database.candidate.findMany({
-      where: { ...base, wilaya: { not: null } },
+      where: { ...seriesScope, wilaya: { not: null } },
       distinct: ["wilaya"],
       select: { wilaya: true },
       orderBy: { wilaya: "asc" }
     });
-    const centerRows = params.wilaya
-      ? await database.candidate.findMany({
-          where: { ...base, wilaya: params.wilaya, examCenter: { not: null } },
-          distinct: ["examCenter"],
-          select: { examCenter: true },
-          orderBy: { examCenter: "asc" }
-        })
-      : [];
-    const schoolRows = params.center
-      ? await database.candidate.findMany({
-          where: { ...base, examCenter: params.center, school: { not: null }, ...(params.wilaya ? { wilaya: params.wilaya } : {}) },
-          distinct: ["school"],
-          select: { school: true },
-          orderBy: { school: "asc" }
-        })
-      : [];
+    if (!params.wilaya) return { series: seriesRows.map((row) => row.series), wilayas: present(wilayaRows.map((row) => row.wilaya)), centers: [], schools: [] };
+
+    const centerRows = await database.candidate.findMany({
+      where: { ...seriesScope, wilaya: params.wilaya, examCenter: { not: null } },
+      distinct: ["examCenter"],
+      select: { examCenter: true },
+      orderBy: { examCenter: "asc" }
+    });
+    const schoolRows = await database.candidate.findMany({
+      where: { ...seriesScope, wilaya: params.wilaya, school: { not: null } },
+      distinct: ["school"],
+      select: { school: true },
+      orderBy: { school: "asc" }
+    });
     return {
       series: seriesRows.map((row) => row.series),
       wilayas: present(wilayaRows.map((row) => row.wilaya)),
@@ -91,17 +94,29 @@ export async function getFilterOptions(examYearId: string, params: { series?: st
 
 /** Cached wrapper for public read paths. Invalidated via revalidateTag("filter-options") on publish/hide/default/delete and on every completed import. */
 export const getFilterOptionsCached = unstable_cache(
-  (examYearId: string, params: { series?: string; wilaya?: string; center?: string }) => getFilterOptions(examYearId, params),
+  (examYearId: string, params: { series?: string; wilaya?: string }) => getFilterOptions(examYearId, params),
   ["filter-options-cache"],
   { tags: ["filter-options"], revalidate: 300 }
 );
 
-export function resultWhere(examYearId: string, filters: { series: string; wilaya: string; center: string; school: string }): Prisma.CandidateWhereInput | null {
-  const rankable = { examYearId, decision: { not: "ANNULE" as const } };
-  if (filters.school) return { ...rankable, school: filters.school, ...(filters.center ? { examCenter: filters.center } : {}), ...(filters.wilaya ? { wilaya: filters.wilaya } : {}) };
-  if (filters.center) return { ...rankable, examCenter: filters.center, ...(filters.wilaya ? { wilaya: filters.wilaya } : {}) };
-  if (filters.series) return { ...rankable, series: filters.series };
-  return null;
+/**
+ * Ranking scope (no school/center): Top-N by average, excluding ANNULE since a
+ * cancelled exam has no meaningful average to rank - mirrors candidateRank's rule.
+ * Roster scope (school or center picked): every candidate regardless of decision,
+ * so Passed/Resit/Failed/Cancelled/Absent are all visible - this is a full roster,
+ * not a leaderboard, so nothing is excluded.
+ */
+export function resultWhere(examYearId: string, filters: { series: string; wilaya: string; center: string; school: string }): Prisma.CandidateWhereInput {
+  const detailed = Boolean(filters.center || filters.school);
+  const scoped: Prisma.CandidateWhereInput = {
+    examYearId,
+    ...(detailed ? {} : { decision: { not: "ANNULE" as const } }),
+    ...(filters.series ? { series: filters.series } : {}),
+    ...(filters.wilaya ? { wilaya: filters.wilaya } : {})
+  };
+  if (filters.school) return { ...scoped, school: filters.school, ...(filters.center ? { examCenter: filters.center } : {}) };
+  if (filters.center) return { ...scoped, examCenter: filters.center };
+  return scoped;
 }
 
 export function resultOrder(sort: string): Prisma.CandidateOrderByWithRelationInput[] {
@@ -114,9 +129,8 @@ export function resultOrder(sort: string): Prisma.CandidateOrderByWithRelationIn
 export async function browseResults(examYearId: string, filters: { series: string; wilaya: string; center: string; school: string; sort: string; page: number }, database = db) {
   return withDatabaseRetry(async () => {
     const where = resultWhere(examYearId, filters);
-    if (!where) return { candidates: [], total: 0, pageCount: 0, statistics: null };
     const detailed = Boolean(filters.center || filters.school);
-    const take = detailed ? PAGE_SIZE : 10;
+    const take = PAGE_SIZE;
     const skip = detailed ? (filters.page - 1) * PAGE_SIZE : 0;
     const candidates = await database.candidate.findMany({
       where,
@@ -131,8 +145,20 @@ export async function browseResults(examYearId: string, filters: { series: strin
       const passed = await database.candidate.count({ where: { AND: [where, { decision: "ADMIS" }] } });
       const session = await database.candidate.count({ where: { AND: [where, { decision: "SESSIONNAIRE" }] } });
       const failed = await database.candidate.count({ where: { AND: [where, { decision: "REDOUBLE" }] } });
-      const aggregate = await database.candidate.aggregate({ where, _max: { average: true } });
-      statistics = { total, passed, session, failed, highest: Number(aggregate._max.average ?? 0), successRate: total ? (passed / total) * 100 : 0 };
+      const cancelled = await database.candidate.count({ where: { AND: [where, { decision: "ANNULE" }] } });
+      const absent = await database.candidate.count({ where: { AND: [where, { decision: "ABSENT" }] } });
+      const aggregate = await database.candidate.aggregate({ where, _max: { average: true }, _min: { average: true } });
+      statistics = {
+        total,
+        passed,
+        session,
+        failed,
+        cancelled,
+        absent,
+        highest: Number(aggregate._max.average ?? 0),
+        lowest: Number(aggregate._min.average ?? 0),
+        successRate: total ? (passed / total) * 100 : 0
+      };
     }
     return {
       candidates: candidates.map((candidate) => ({ ...candidate, average: Number(candidate.average) })),
