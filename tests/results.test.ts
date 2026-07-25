@@ -15,6 +15,8 @@ describe("ranking and browsing business rules", () => {
   it("combines series and wilaya for a wilaya ranking", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "", school: "" })).toEqual({ ...rankable(), series: "M", wilaya: "Trarza" }));
   it("keeps series scoped for center rosters and does not exclude any decision", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "Centre 1", school: "" })).toEqual({ examYearId: "y", series: "M", wilaya: "Trarza", examCenter: "Centre 1" }));
   it("keeps series scoped for school rosters and does not exclude any decision", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "", school: "School" })).toEqual({ examYearId: "y", series: "M", wilaya: "Trarza", school: "School" }));
+  it("adds an in-roster name filter (case-insensitive contains) when searching within a school/center", () => expect(resultWhere("y", { series: "", wilaya: "", center: "", school: "School", name: "ahmed" })).toEqual({ examYearId: "y", school: "School", fullName: { contains: "ahmed", mode: "insensitive" } }));
+  it("omits the name filter entirely when not provided, so existing callers are unaffected", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "", school: "" })).toEqual({ ...rankable(), series: "M", wilaya: "Trarza" }));
   it("supports all detailed sorting modes and ends every order with a unique tie-breaker", () => {
     expect(resultOrder("lowest")).toEqual([{ average: "asc" }, { fullName: "asc" }, { candidateNumber: "asc" }]);
     expect(resultOrder("name")).toEqual([{ fullName: "asc" }, { candidateNumber: "asc" }]);
@@ -62,6 +64,13 @@ describe("ranking and browsing business rules", () => {
     const database = { candidate: { findMany, count: vi.fn().mockResolvedValue(2), aggregate: vi.fn().mockResolvedValue({ _max: { average: 10 }, _min: { average: 5 } }) } };
     await browseResults("year", { ...filters, school: "School" }, database as never);
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { examYearId: "year", series: "M", wilaya: "Trarza", school: "School" } }));
+  });
+
+  it("scopes a school roster to matching names when searching within it", async () => {
+    const findMany = vi.fn().mockResolvedValue([candidate({ fullName: "Ahmed Salem" })]);
+    const database = { candidate: { findMany, count: vi.fn().mockResolvedValue(1), aggregate: vi.fn().mockResolvedValue({ _max: { average: 8.47 }, _min: { average: 8.47 } }) } };
+    await browseResults("year", { series: "", wilaya: "", center: "", school: "School", name: "Ahmed", sort: "highest", page: 1 }, database as never);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { examYearId: "year", school: "School", fullName: { contains: "Ahmed", mode: "insensitive" } } }));
   });
 
   it("excludes ANNULE-only values from ranking filter options and keeps school independent of center", async () => {

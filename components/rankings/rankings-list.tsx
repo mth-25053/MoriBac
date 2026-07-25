@@ -10,7 +10,8 @@ export function RankingsList({
   hasMore,
   loadingMore,
   onLoadMore,
-  onSelect
+  onSelect,
+  startRank = 4
 }: {
   dict: Dictionary;
   candidates: RankingCandidate[];
@@ -18,6 +19,7 @@ export function RankingsList({
   loadingMore: boolean;
   onLoadMore: () => void;
   onSelect: (candidateNumber: string) => void;
+  startRank?: number;
 }) {
   if (candidates.length === 0) return null;
   return <div className="mt-8">
@@ -33,7 +35,7 @@ export function RankingsList({
           className="rank-row stagger flex w-full flex-wrap items-center gap-x-4 gap-y-2 p-4 text-start sm:flex-nowrap"
           style={{ borderColor: "var(--line)", ["--stagger-index" as string]: Math.min(index, 8) }}
         >
-          <span className="muted flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)] text-sm font-black tabular-nums" dir="ltr">{index + 4}</span>
+          <span className="muted flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)] text-sm font-black tabular-nums" dir="ltr">{index + startRank}</span>
           <div className="min-w-0 flex-1">
             <p className="truncate font-bold">{candidate.fullName}</p>
             <p className="muted flex flex-wrap items-center gap-x-2 text-xs">

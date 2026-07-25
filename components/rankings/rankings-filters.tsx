@@ -14,12 +14,9 @@ export function RankingsFilters({
   series,
   wilaya,
   path,
-  school,
-  examCenter,
   options,
   optionsLoading,
   hasActiveFilters,
-  sticky,
   onYear,
   onSeries,
   onWilaya,
@@ -34,12 +31,9 @@ export function RankingsFilters({
   series: string;
   wilaya: string;
   path: "school" | "center" | null;
-  school: string;
-  examCenter: string;
   options: FilterOptions;
   optionsLoading: boolean;
   hasActiveFilters: boolean;
-  sticky: boolean;
   onYear: (value: number) => void;
   onSeries: (value: string) => void;
   onWilaya: (value: string) => void;
@@ -48,7 +42,7 @@ export function RankingsFilters({
   onCenter: (value: string) => void;
   onReset: () => void;
 }) {
-  return <div className={`surface mt-8 p-4 sm:p-5${sticky ? " rankings-sticky" : ""}`}>
+  return <div className="surface mt-8 p-4 sm:p-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
       {years.length > 1 && <label className="flex items-center gap-2">
         <span className="label !mb-0">{dict.publishedYear}</span>
@@ -69,36 +63,19 @@ export function RankingsFilters({
     </div>
 
     {wilaya && <div className="mt-5 border-t pt-4" style={{ borderColor: "var(--line)" }}>
-      {!school && !examCenter && <>
-        <span className="label">{dict.choosePath}</span>
-        <div className="grid grid-cols-2 gap-2.5">
-          <button type="button" className="button secondary !min-h-12" style={path === "school" ? { background: "var(--accent-soft)", color: "var(--accent-strong)" } : undefined} onClick={() => onPath("school")}>{dict.viewBySchool}</button>
-          <button type="button" className="button secondary !min-h-12" style={path === "center" ? { background: "var(--accent-soft)", color: "var(--accent-strong)" } : undefined} onClick={() => onPath("center")}>{dict.viewByCenter}</button>
-        </div>
+      <span className="label">{dict.choosePath}</span>
+      <div className="grid grid-cols-2 gap-2.5">
+        <button type="button" className="button secondary !min-h-12" style={path === "school" ? { background: "var(--accent-soft)", color: "var(--accent-strong)" } : undefined} onClick={() => onPath("school")}>{dict.viewBySchool}</button>
+        <button type="button" className="button secondary !min-h-12" style={path === "center" ? { background: "var(--accent-soft)", color: "var(--accent-strong)" } : undefined} onClick={() => onPath("center")}>{dict.viewByCenter}</button>
+      </div>
 
-        {path === "school" && <div className="mt-3">
-          <span className="label">{dict.school}</span>
-          <FilterableList items={options.schools} value={school} onSelect={onSchool} placeholder={dict.schoolSearchPlaceholder} emptyLabel={dict.noResults} />
-        </div>}
-        {path === "center" && <div className="mt-3">
-          <span className="label">{dict.center}</span>
-          <FilterableList items={options.centers} value={examCenter} onSelect={onCenter} placeholder={dict.centerSearchPlaceholder} emptyLabel={dict.noResults} />
-        </div>}
-      </>}
-
-      {school && <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <span className="label !mb-1">{dict.school}</span>
-          <p className="truncate font-black"><bdi>{school}</bdi></p>
-        </div>
-        <button type="button" className="button secondary shrink-0" onClick={() => onSchool("")}>{dict.changeSchool}</button>
+      {path === "school" && <div className="mt-3">
+        <span className="label">{dict.school}</span>
+        <FilterableList items={options.schools} value="" onSelect={onSchool} placeholder={dict.schoolSearchPlaceholder} emptyLabel={dict.noResults} />
       </div>}
-      {examCenter && <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <span className="label !mb-1">{dict.center}</span>
-          <p className="truncate font-black"><bdi>{examCenter}</bdi></p>
-        </div>
-        <button type="button" className="button secondary shrink-0" onClick={() => onCenter("")}>{dict.changeCenter}</button>
+      {path === "center" && <div className="mt-3">
+        <span className="label">{dict.center}</span>
+        <FilterableList items={options.centers} value="" onSelect={onCenter} placeholder={dict.centerSearchPlaceholder} emptyLabel={dict.noResults} />
       </div>}
     </div>}
   </div>;

@@ -1,10 +1,10 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { Dictionary } from "@/lib/i18n";
 import { RankingsFilters } from "@/components/rankings/rankings-filters";
 import { RankingsPodium } from "@/components/rankings/rankings-hero";
 import { RankingsList } from "@/components/rankings/rankings-list";
-import { RankingsStats } from "@/components/rankings/rankings-stats";
 import type { FilterOptions, RankingsResponse } from "@/components/rankings/types";
 
 type YearOption = { year: number; isDefault: boolean };
@@ -29,31 +29,24 @@ export function RankingsSection({
   initialOptions: FilterOptions;
   onSelectCandidate: (candidateNumber: string) => void;
 }) {
+  const router = useRouter();
   const [year, setYear] = useState(initialYear);
   const [series, setSeries] = useState("");
   const [wilaya, setWilaya] = useState("");
   const [path, setPath] = useState<"school" | "center" | null>(null);
-  const [school, setSchool] = useState("");
-  const [examCenter, setExamCenter] = useState("");
 
   const [options, setOptions] = useState<FilterOptions>(initialOptions);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [data, setData] = useState<RankingsResponse | null>(null);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlSeries = params.get("stream") ?? "";
     const urlWilaya = params.get("wilaya") ?? "";
-    const urlSchool = params.get("school") ?? "";
-    const urlCenter = params.get("center") ?? "";
     if (urlSeries) setSeries(urlSeries);
     if (urlWilaya) setWilaya(urlWilaya);
-    if (urlSchool) { setSchool(urlSchool); setPath("school"); }
-    else if (urlCenter) { setExamCenter(urlCenter); setPath("center"); }
   }, []);
 
   const skipUrlWrite = useRef(true);
@@ -63,10 +56,8 @@ export function RankingsSection({
     const set = (key: string, value: string) => { if (value) url.searchParams.set(key, value); else url.searchParams.delete(key); };
     set("stream", series);
     set("wilaya", wilaya);
-    set("school", school);
-    set("center", examCenter);
     window.history.replaceState(null, "", url);
-  }, [series, wilaya, school, examCenter]);
+  }, [series, wilaya]);
 
   const optionsAbort = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -92,50 +83,33 @@ export function RankingsSection({
     resultsAbort.current = controller;
     setLoading(true);
     setError(false);
-    setPage(1);
     const query = new URLSearchParams({ year: String(year), sort: "highest", page: "1" });
     if (series) query.set("series", series);
     if (wilaya) query.set("wilaya", wilaya);
-    if (school) query.set("school", school);
-    else if (examCenter) query.set("center", examCenter);
     fetch(`/api/public/results?${query}`, { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((json: RankingsResponse) => setData(json))
       .catch((fetchError) => { if ((fetchError as { name?: string })?.name !== "AbortError") setError(true); })
       .finally(() => { if (resultsAbort.current === controller) setLoading(false); });
     return () => controller.abort();
-  }, [year, series, wilaya, school, examCenter]);
+  }, [year, series, wilaya]);
 
-  async function loadMore() {
-    if (!data || loadingMore || page >= data.pageCount) return;
-    const nextPage = page + 1;
-    setLoadingMore(true);
-    try {
-      const query = new URLSearchParams({ year: String(year), sort: "highest", page: String(nextPage) });
-      if (series) query.set("series", series);
-      if (wilaya) query.set("wilaya", wilaya);
-      if (school) query.set("school", school);
-      else if (examCenter) query.set("center", examCenter);
-      const response = await fetch(`/api/public/results?${query}`);
-      if (!response.ok) return;
-      const json: RankingsResponse = await response.json();
-      setData((current) => (current ? { ...json, candidates: [...current.candidates, ...json.candidates] } : json));
-      setPage(nextPage);
-    } finally {
-      setLoadingMore(false);
-    }
+  function selectYear(value: number) { setYear(value); setSeries(""); setWilaya(""); setPath(null); }
+  function selectSeries(value: string) { setSeries(value); setWilaya(""); setPath(null); }
+  function selectWilaya(value: string) { setWilaya(value); setPath(null); }
+  function selectPath(value: "school" | "center") { setPath(value); }
+  function reset() { setSeries(""); setWilaya(""); setPath(null); }
+
+  function goToEntity(kind: "school" | "center", name: string) {
+    const query = new URLSearchParams({ year: String(year) });
+    if (wilaya) query.set("wilaya", wilaya);
+    if (series) query.set("series", series);
+    router.push(`/${kind === "school" ? "schools" : "centers"}/${encodeURIComponent(name)}?${query.toString()}`);
   }
 
-  function selectYear(value: number) { setYear(value); setSeries(""); setWilaya(""); setPath(null); setSchool(""); setExamCenter(""); }
-  function selectSeries(value: string) { setSeries(value); setWilaya(""); setPath(null); setSchool(""); setExamCenter(""); }
-  function selectWilaya(value: string) { setWilaya(value); setPath(null); setSchool(""); setExamCenter(""); }
-  function selectPath(value: "school" | "center") { setPath(value); setSchool(""); setExamCenter(""); }
-  function reset() { setSeries(""); setWilaya(""); setPath(null); setSchool(""); setExamCenter(""); }
-
-  const detailed = Boolean(school || examCenter);
   const rest = data ? data.candidates.slice(3) : [];
 
-  return <section className="shell mt-6 sm:mt-10">
+  return <section id="rankings" className="shell mt-6 scroll-mt-24 sm:mt-10">
     <div className="text-center">
       <span className="eyebrow">{dict.rankingsEyebrow}</span>
       <h2 className="mt-2 text-3xl font-black sm:text-4xl">{dict.rankingsTitle}</h2>
@@ -149,18 +123,15 @@ export function RankingsSection({
       series={series}
       wilaya={wilaya}
       path={path}
-      school={school}
-      examCenter={examCenter}
       options={options}
       optionsLoading={optionsLoading}
       hasActiveFilters={Boolean(series || wilaya)}
-      sticky={detailed}
       onYear={selectYear}
       onSeries={selectSeries}
       onWilaya={selectWilaya}
       onPath={selectPath}
-      onSchool={setSchool}
-      onCenter={setExamCenter}
+      onSchool={(name) => goToEntity("school", name)}
+      onCenter={(name) => goToEntity("center", name)}
       onReset={reset}
     />
 
@@ -169,8 +140,7 @@ export function RankingsSection({
     {!error && !loading && data && data.candidates.length === 0 && <p className="muted mt-10 text-center">{dict.rankingsEmpty}</p>}
     {!error && !loading && data && data.candidates.length > 0 && <>
       <RankingsPodium dict={dict} candidates={data.candidates} onSelect={onSelectCandidate} />
-      {detailed && data.statistics && <RankingsStats dict={dict} statistics={data.statistics} />}
-      <RankingsList dict={dict} candidates={rest} hasMore={page < data.pageCount} loadingMore={loadingMore} onLoadMore={loadMore} onSelect={onSelectCandidate} />
+      <RankingsList dict={dict} candidates={rest} hasMore={false} loadingMore={false} onLoadMore={() => undefined} onSelect={onSelectCandidate} startRank={4} />
     </>}
   </section>;
 }

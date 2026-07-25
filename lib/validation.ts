@@ -14,6 +14,7 @@ export const browseSchema = z.object({
   wilaya: z.string().trim().max(150).optional().default(""),
   center: z.string().trim().max(250).optional().default(""),
   school: z.string().trim().max(250).optional().default(""),
+  name: z.string().trim().max(100).optional().default(""),
   sort: z.enum(["highest", "lowest", "name", "number"]).optional().default("highest"),
   page: z.coerce.number().int().positive().max(10000).optional().default(1),
   year: z.coerce.number().int().min(2000).max(2100).optional()

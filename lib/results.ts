@@ -154,13 +154,14 @@ export const getFilterOptionsCached = unstable_cache(
  * so Passed/Resit/Failed/Cancelled/Absent are all visible - this is a full roster,
  * not a leaderboard, so nothing is excluded.
  */
-export function resultWhere(examYearId: string, filters: { series: string; wilaya: string; center: string; school: string }): Prisma.CandidateWhereInput {
+export function resultWhere(examYearId: string, filters: { series: string; wilaya: string; center: string; school: string; name?: string }): Prisma.CandidateWhereInput {
   const detailed = Boolean(filters.center || filters.school);
   const scoped: Prisma.CandidateWhereInput = {
     examYearId,
     ...(detailed ? {} : { decision: { not: "ANNULE" as const } }),
     ...(filters.series ? { series: filters.series } : {}),
-    ...(filters.wilaya ? { wilaya: filters.wilaya } : {})
+    ...(filters.wilaya ? { wilaya: filters.wilaya } : {}),
+    ...(filters.name ? { fullName: { contains: filters.name, mode: "insensitive" as const } } : {})
   };
   if (filters.school) return { ...scoped, school: filters.school, ...(filters.center ? { examCenter: filters.center } : {}) };
   if (filters.center) return { ...scoped, examCenter: filters.center };
@@ -175,7 +176,7 @@ export function resultOrder(sort: string): Prisma.CandidateOrderByWithRelationIn
   return [{ average: "desc" }, { fullName: "asc" }, { candidateNumber: "asc" }];
 }
 
-export async function browseResults(examYearId: string, filters: { series: string; wilaya: string; center: string; school: string; sort: string; page: number }, database = db) {
+export async function browseResults(examYearId: string, filters: { series: string; wilaya: string; center: string; school: string; name?: string; sort: string; page: number }, database = db) {
   return withDatabaseRetry(async () => {
     const where = resultWhere(examYearId, filters);
     const detailed = Boolean(filters.center || filters.school);
@@ -220,7 +221,29 @@ export async function browseResults(examYearId: string, filters: { series: strin
 
 /** Cached wrapper for the public browse/rankings/statistics read path. Same invalidation tag as getFilterOptionsCached. */
 export const browseResultsCached = unstable_cache(
-  (examYearId: string, filters: { series: string; wilaya: string; center: string; school: string; sort: string; page: number }) => browseResults(examYearId, filters),
+  (examYearId: string, filters: { series: string; wilaya: string; center: string; school: string; name?: string; sort: string; page: number }) => browseResults(examYearId, filters),
   ["browse-results-cache"],
   { tags: ["filter-options"], revalidate: 60 }
 );
+
+/**
+ * Server-side data for the dedicated /schools/[school] and /centers/[center] pages -
+ * resolves the requested (or default) published year and loads page 1 of that single
+ * school/center's roster + statistics, so the page has real content on first paint
+ * instead of a client-side loading state. Returns null when there is no published year
+ * to serve (invalid year param, or nothing published yet) - the caller renders a graceful
+ * empty state rather than a 404, since the route itself is valid.
+ */
+export async function getRosterInitialData(kind: "school" | "center", name: string, filters: { year?: number; wilaya: string; series: string }) {
+  const year = await getPublishedYearCached(filters.year);
+  if (!year) return null;
+  const data = await browseResultsCached(year.id, {
+    series: filters.series,
+    wilaya: filters.wilaya,
+    school: kind === "school" ? name : "",
+    center: kind === "center" ? name : "",
+    sort: "highest",
+    page: 1
+  });
+  return { year: year.year, ...data };
+}

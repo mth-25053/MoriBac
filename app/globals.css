@@ -77,8 +77,6 @@ button,a,select { -webkit-tap-highlight-color:transparent; }
 .select-trigger { width:100%; min-height:48px; display:flex; align-items:center; justify-content:space-between; gap:.5rem; border:1px solid var(--line); border-radius:.75rem; padding:.7rem .9rem; background:var(--surface); color:var(--text); font-weight:800; font-size:.92rem; cursor:pointer; transition:border-color .15s; }
 .select-trigger:hover { border-color:var(--accent); }
 
-.rankings-sticky { position:sticky; top:calc(4.5rem + .6rem); z-index:5; backdrop-filter:blur(10px); background:color-mix(in srgb,var(--surface) 90%,transparent); }
-
 .stagger { animation:reveal .5s cubic-bezier(.16,1,.3,1) both; animation-delay:calc(var(--stagger-index,0) * 60ms); }
 
 .reveal { animation:reveal .5s cubic-bezier(.16,1,.3,1) both; }
