@@ -69,19 +69,36 @@ export function RankingsFilters({
     </div>
 
     {wilaya && <div className="mt-5 border-t pt-4" style={{ borderColor: "var(--line)" }}>
-      <span className="label">{dict.choosePath}</span>
-      <div className="grid grid-cols-2 gap-2.5">
-        <button type="button" className="button secondary !min-h-12" style={path === "school" ? { background: "var(--accent-soft)", color: "var(--accent-strong)" } : undefined} onClick={() => onPath("school")}>{dict.viewBySchool}</button>
-        <button type="button" className="button secondary !min-h-12" style={path === "center" ? { background: "var(--accent-soft)", color: "var(--accent-strong)" } : undefined} onClick={() => onPath("center")}>{dict.viewByCenter}</button>
-      </div>
+      {!school && !examCenter && <>
+        <span className="label">{dict.choosePath}</span>
+        <div className="grid grid-cols-2 gap-2.5">
+          <button type="button" className="button secondary !min-h-12" style={path === "school" ? { background: "var(--accent-soft)", color: "var(--accent-strong)" } : undefined} onClick={() => onPath("school")}>{dict.viewBySchool}</button>
+          <button type="button" className="button secondary !min-h-12" style={path === "center" ? { background: "var(--accent-soft)", color: "var(--accent-strong)" } : undefined} onClick={() => onPath("center")}>{dict.viewByCenter}</button>
+        </div>
 
-      {path === "school" && <div className="mt-3">
-        <span className="label">{dict.school}</span>
-        <FilterableList items={options.schools} value={school} onSelect={onSchool} placeholder={dict.schoolSearchPlaceholder} emptyLabel={dict.noResults} />
+        {path === "school" && <div className="mt-3">
+          <span className="label">{dict.school}</span>
+          <FilterableList items={options.schools} value={school} onSelect={onSchool} placeholder={dict.schoolSearchPlaceholder} emptyLabel={dict.noResults} />
+        </div>}
+        {path === "center" && <div className="mt-3">
+          <span className="label">{dict.center}</span>
+          <FilterableList items={options.centers} value={examCenter} onSelect={onCenter} placeholder={dict.centerSearchPlaceholder} emptyLabel={dict.noResults} />
+        </div>}
+      </>}
+
+      {school && <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <span className="label !mb-1">{dict.school}</span>
+          <p className="truncate font-black"><bdi>{school}</bdi></p>
+        </div>
+        <button type="button" className="button secondary shrink-0" onClick={() => onSchool("")}>{dict.changeSchool}</button>
       </div>}
-      {path === "center" && <div className="mt-3">
-        <span className="label">{dict.center}</span>
-        <FilterableList items={options.centers} value={examCenter} onSelect={onCenter} placeholder={dict.centerSearchPlaceholder} emptyLabel={dict.noResults} />
+      {examCenter && <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <span className="label !mb-1">{dict.center}</span>
+          <p className="truncate font-black"><bdi>{examCenter}</bdi></p>
+        </div>
+        <button type="button" className="button secondary shrink-0" onClick={() => onCenter("")}>{dict.changeCenter}</button>
       </div>}
     </div>}
   </div>;
