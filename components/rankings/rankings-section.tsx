@@ -2,10 +2,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { Dictionary } from "@/lib/i18n";
 import { RankingsFilters } from "@/components/rankings/rankings-filters";
-import { RankingsHero } from "@/components/rankings/rankings-hero";
+import { RankingsPodium } from "@/components/rankings/rankings-hero";
 import { RankingsList } from "@/components/rankings/rankings-list";
 import { RankingsStats } from "@/components/rankings/rankings-stats";
-import { rankingsScope, type FilterOptions, type RankingsResponse } from "@/components/rankings/types";
+import type { FilterOptions, RankingsResponse } from "@/components/rankings/types";
 
 type YearOption = { year: number; isDefault: boolean };
 
@@ -20,12 +20,14 @@ export function RankingsSection({
   dict,
   initialYear,
   years,
-  initialOptions
+  initialOptions,
+  onSelectCandidate
 }: {
   dict: Dictionary;
   initialYear: number;
   years: YearOption[];
   initialOptions: FilterOptions;
+  onSelectCandidate: (candidateNumber: string) => void;
 }) {
   const [year, setYear] = useState(initialYear);
   const [series, setSeries] = useState("");
@@ -35,37 +37,56 @@ export function RankingsSection({
   const [examCenter, setExamCenter] = useState("");
 
   const [options, setOptions] = useState<FilterOptions>(initialOptions);
+  const [optionsLoading, setOptionsLoading] = useState(false);
   const [data, setData] = useState<RankingsResponse | null>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(false);
 
-  const optionsAbort = useRef<AbortController | null>(null);
-  const lastOptionsKey = useRef("");
   useEffect(() => {
-    const key = `${year}:${series}:${wilaya}`;
-    if (lastOptionsKey.current === key) return;
-    lastOptionsKey.current = key;
+    const params = new URLSearchParams(window.location.search);
+    const urlSeries = params.get("stream") ?? "";
+    const urlWilaya = params.get("wilaya") ?? "";
+    const urlSchool = params.get("school") ?? "";
+    const urlCenter = params.get("center") ?? "";
+    if (urlSeries) setSeries(urlSeries);
+    if (urlWilaya) setWilaya(urlWilaya);
+    if (urlSchool) { setSchool(urlSchool); setPath("school"); }
+    else if (urlCenter) { setExamCenter(urlCenter); setPath("center"); }
+  }, []);
+
+  const skipUrlWrite = useRef(true);
+  useEffect(() => {
+    if (skipUrlWrite.current) { skipUrlWrite.current = false; return; }
+    const url = new URL(window.location.href);
+    const set = (key: string, value: string) => { if (value) url.searchParams.set(key, value); else url.searchParams.delete(key); };
+    set("stream", series);
+    set("wilaya", wilaya);
+    set("school", school);
+    set("center", examCenter);
+    window.history.replaceState(null, "", url);
+  }, [series, wilaya, school, examCenter]);
+
+  const optionsAbort = useRef<AbortController | null>(null);
+  useEffect(() => {
     optionsAbort.current?.abort();
     const controller = new AbortController();
     optionsAbort.current = controller;
+    setOptionsLoading(true);
     const query = new URLSearchParams({ year: String(year) });
     if (series) query.set("series", series);
     if (wilaya) query.set("wilaya", wilaya);
     fetch(`/api/public/meta?${query}`, { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((meta: { options: FilterOptions }) => setOptions(meta.options))
-      .catch((fetchError) => { if ((fetchError as { name?: string })?.name !== "AbortError") { /* keep previous options, filters remain usable */ } });
+      .catch((fetchError) => { if ((fetchError as { name?: string })?.name !== "AbortError") { /* keep previous options, filters remain usable */ } })
+      .finally(() => { if (optionsAbort.current === controller) setOptionsLoading(false); });
     return () => controller.abort();
   }, [year, series, wilaya]);
 
   const resultsAbort = useRef<AbortController | null>(null);
-  const lastResultsKey = useRef("");
   useEffect(() => {
-    const key = `${year}:${series}:${wilaya}:${school}:${examCenter}`;
-    if (lastResultsKey.current === key) return;
-    lastResultsKey.current = key;
     resultsAbort.current?.abort();
     const controller = new AbortController();
     resultsAbort.current = controller;
@@ -112,10 +133,9 @@ export function RankingsSection({
   function reset() { setSeries(""); setWilaya(""); setPath(null); setSchool(""); setExamCenter(""); }
 
   const detailed = Boolean(school || examCenter);
-  const scope = rankingsScope({ series, wilaya, school, examCenter });
   const rest = data ? data.candidates.slice(3) : [];
 
-  return <section className="shell mt-16 sm:mt-24">
+  return <section className="shell mt-6 sm:mt-10">
     <div className="text-center">
       <span className="eyebrow">{dict.rankingsEyebrow}</span>
       <h2 className="mt-2 text-3xl font-black sm:text-4xl">{dict.rankingsTitle}</h2>
@@ -132,7 +152,9 @@ export function RankingsSection({
       school={school}
       examCenter={examCenter}
       options={options}
+      optionsLoading={optionsLoading}
       hasActiveFilters={Boolean(series || wilaya)}
+      sticky={detailed}
       onYear={selectYear}
       onSeries={selectSeries}
       onWilaya={selectWilaya}
@@ -146,9 +168,9 @@ export function RankingsSection({
     {!error && loading && <Skeleton />}
     {!error && !loading && data && data.candidates.length === 0 && <p className="muted mt-10 text-center">{dict.rankingsEmpty}</p>}
     {!error && !loading && data && data.candidates.length > 0 && <>
-      <RankingsHero dict={dict} candidates={data.candidates} scope={scope} series={series} wilaya={wilaya} school={school} examCenter={examCenter} />
+      <RankingsPodium dict={dict} candidates={data.candidates} onSelect={onSelectCandidate} />
       {detailed && data.statistics && <RankingsStats dict={dict} statistics={data.statistics} />}
-      <RankingsList dict={dict} candidates={rest} hasMore={page < data.pageCount} loadingMore={loadingMore} onLoadMore={loadMore} />
+      <RankingsList dict={dict} candidates={rest} hasMore={page < data.pageCount} loadingMore={loadingMore} onLoadMore={loadMore} onSelect={onSelectCandidate} />
     </>}
   </section>;
 }

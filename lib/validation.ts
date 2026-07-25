@@ -5,6 +5,10 @@ export const candidateSearchSchema = z.object({
   number: z.string().trim().min(1).max(50).regex(/^\d+$/)
 });
 
+export const candidateNameSearchSchema = z.object({
+  query: z.string().trim().min(2).max(100)
+});
+
 export const browseSchema = z.object({
   series: z.string().trim().max(100).optional().default(""),
   wilaya: z.string().trim().max(150).optional().default(""),

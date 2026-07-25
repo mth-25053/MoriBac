@@ -8,3 +8,6 @@ export const SESSION_DURATION_SECONDS = 60 * 60 * 8;
 
 export const DECISIONS = ["ADMIS", "SESSIONNAIRE", "REDOUBLE", "ABSENT", "ANNULE"] as const;
 export type DecisionValue = (typeof DECISIONS)[number];
+
+export const NAME_SEARCH_LIMIT = 20;
+export const NAME_SEARCH_MAX_WORDS = 6;

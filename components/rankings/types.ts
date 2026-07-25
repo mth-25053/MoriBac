@@ -34,13 +34,3 @@ export type RankingsResponse = {
   pageCount: number;
   statistics: RankingStatistics | null;
 };
-
-export type RankingsScope = "national" | "series" | "wilaya" | "school" | "center";
-
-export function rankingsScope(filters: { series: string; wilaya: string; school: string; examCenter: string }): RankingsScope {
-  if (filters.school) return "school";
-  if (filters.examCenter) return "center";
-  if (filters.wilaya) return "wilaya";
-  if (filters.series) return "series";
-  return "national";
-}

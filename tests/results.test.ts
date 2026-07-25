@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { candidateRank, decisionBadgeClass } from "@/lib/decision";
-import { browseResults, findCandidateResult, getFilterOptions, resultOrder, resultWhere } from "@/lib/results";
+import { browseResults, findCandidateResult, getCandidateRanks, getFilterOptions, resultOrder, resultWhere, searchCandidatesByName } from "@/lib/results";
 
 const filters = { series: "M", wilaya: "Trarza", center: "", school: "", sort: "lowest", page: 1 };
 function candidate(overrides: Record<string, unknown> = {}) {
@@ -15,17 +15,17 @@ describe("ranking and browsing business rules", () => {
   it("combines series and wilaya for a wilaya ranking", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "", school: "" })).toEqual({ ...rankable(), series: "M", wilaya: "Trarza" }));
   it("keeps series scoped for center rosters and does not exclude any decision", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "Centre 1", school: "" })).toEqual({ examYearId: "y", series: "M", wilaya: "Trarza", examCenter: "Centre 1" }));
   it("keeps series scoped for school rosters and does not exclude any decision", () => expect(resultWhere("y", { series: "M", wilaya: "Trarza", center: "", school: "School" })).toEqual({ examYearId: "y", series: "M", wilaya: "Trarza", school: "School" }));
-  it("supports all detailed sorting modes", () => {
-    expect(resultOrder("lowest")[0]).toEqual({ average: "asc" });
-    expect(resultOrder("name")[0]).toEqual({ fullName: "asc" });
-    expect(resultOrder("number")[0]).toEqual({ candidateNumber: "asc" });
-    expect(resultOrder("highest")[0]).toEqual({ average: "desc" });
+  it("supports all detailed sorting modes and ends every order with a unique tie-breaker", () => {
+    expect(resultOrder("lowest")).toEqual([{ average: "asc" }, { fullName: "asc" }, { candidateNumber: "asc" }]);
+    expect(resultOrder("name")).toEqual([{ fullName: "asc" }, { candidateNumber: "asc" }]);
+    expect(resultOrder("number")).toEqual([{ candidateNumber: "asc" }]);
+    expect(resultOrder("highest")).toEqual([{ average: "desc" }, { fullName: "asc" }, { candidateNumber: "asc" }]);
   });
 
   it("requests only rankable candidates for the series Top 50", async () => {
     const database = { candidate: { findMany: vi.fn().mockResolvedValue([candidate()]), count: vi.fn().mockResolvedValue(75) } };
     const result = await browseResults("year", filters, database as never);
-    expect(database.candidate.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { ...rankable("year"), series: "M", wilaya: "Trarza" }, orderBy: [{ average: "desc" }, { fullName: "asc" }], take: 50, skip: 0 }));
+    expect(database.candidate.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { ...rankable("year"), series: "M", wilaya: "Trarza" }, orderBy: [{ average: "desc" }, { fullName: "asc" }, { candidateNumber: "asc" }], take: 50, skip: 0 }));
     expect(database.candidate.count).toHaveBeenCalledWith({ where: { ...rankable("year"), series: "M", wilaya: "Trarza" } });
     expect(result.candidates).toHaveLength(1);
   });
@@ -97,5 +97,63 @@ describe("ranking and browsing business rules", () => {
     expect(decisionBadgeClass("ANNULE")).toBe("cancelled");
     expect(decisionBadgeClass("REDOUBLE")).toBe("calm");
     expect(decisionBadgeClass("ADMIS")).toBe("");
+  });
+});
+
+describe("multi-scope candidate ranks", () => {
+  const base = { series: "M", wilaya: "Trarza", school: "École Rosso", examCenter: "Centre Rosso", average: 14, decision: "ADMIS" };
+
+  it("returns every scope as null for an ANNULE candidate without querying the database", async () => {
+    const count = vi.fn();
+    const ranks = await getCandidateRanks("year", { ...base, decision: "ANNULE" }, { candidate: { count } } as never);
+    expect(ranks).toEqual({ series: null, wilaya: null, school: null, examCenter: null, national: null });
+    expect(count).not.toHaveBeenCalled();
+  });
+
+  it("computes a 1-based rank per scope, excluding ANNULE from the count in each", async () => {
+    const count = vi.fn().mockResolvedValueOnce(4).mockResolvedValueOnce(0).mockResolvedValueOnce(9).mockResolvedValueOnce(2).mockResolvedValueOnce(120);
+    const database = { candidate: { count } };
+    const ranks = await getCandidateRanks("year", base, database as never);
+    expect(ranks).toEqual({ series: 5, wilaya: 1, school: 10, examCenter: 3, national: 121 });
+    for (const call of count.mock.calls) expect(call[0].where).toMatchObject({ examYearId: "year", decision: { not: "ANNULE" }, average: { gt: 14 } });
+    expect(count.mock.calls[0][0].where).toMatchObject({ series: "M" });
+    expect(count.mock.calls[1][0].where).toMatchObject({ wilaya: "Trarza" });
+    expect(count.mock.calls[2][0].where).toMatchObject({ school: "École Rosso" });
+    expect(count.mock.calls[3][0].where).toMatchObject({ examCenter: "Centre Rosso" });
+  });
+
+  it("reports null instead of a guessed rank for scopes with no recorded value", async () => {
+    const count = vi.fn().mockResolvedValue(0);
+    const database = { candidate: { count } };
+    const ranks = await getCandidateRanks("year", { ...base, wilaya: null, school: null, examCenter: null }, database as never);
+    expect(ranks).toEqual({ series: 1, wilaya: null, school: null, examCenter: null, national: 1 });
+    expect(count).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("candidate name search", () => {
+  it("matches every query word independently against fullName, case-insensitively", async () => {
+    const findMany = vi.fn().mockResolvedValue([candidate({ fullName: "Ahmed Mokhtar" })]);
+    const result = await searchCandidatesByName("year", "  ahmed   MOKHTAR  ", { candidate: { findMany } } as never);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { examYearId: "year", AND: [{ fullName: { contains: "ahmed", mode: "insensitive" } }, { fullName: { contains: "MOKHTAR", mode: "insensitive" } }] }
+    }));
+    expect(result.candidates).toHaveLength(1);
+    expect(result.hasMore).toBe(false);
+  });
+
+  it("reports hasMore when results exceed the display limit without leaking the extra row", async () => {
+    const rows = Array.from({ length: 21 }, (_, index) => candidate({ candidateNumber: String(index).padStart(5, "0"), fullName: `Name ${index}` }));
+    const findMany = vi.fn().mockResolvedValue(rows);
+    const result = await searchCandidatesByName("year", "name", { candidate: { findMany } } as never);
+    expect(result.candidates).toHaveLength(20);
+    expect(result.hasMore).toBe(true);
+  });
+
+  it("returns no candidates for a blank query without touching the database", async () => {
+    const findMany = vi.fn();
+    const result = await searchCandidatesByName("year", "   ", { candidate: { findMany } } as never);
+    expect(result).toEqual({ candidates: [], hasMore: false });
+    expect(findMany).not.toHaveBeenCalled();
   });
 });

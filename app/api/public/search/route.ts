@@ -3,7 +3,7 @@ import { recordSearch } from "@/lib/analytics";
 import { databaseUnavailable } from "@/lib/database-errors";
 import { serializeCandidate } from "@/lib/format";
 import { isRateLimited } from "@/lib/rate-limit";
-import { findCandidateResult, getCandidateRank, getPublishedYearCached } from "@/lib/results";
+import { findCandidateResult, getCandidateRanks, getPublishedYearCached } from "@/lib/results";
 import { candidateSearchSchema } from "@/lib/validation";
 
 export async function GET(request: Request) {
@@ -18,14 +18,14 @@ export async function GET(request: Request) {
     const year = await getPublishedYearCached(requestedYear);
     if (!year) return NextResponse.json({ candidate: null });
     const candidate = await findCandidateResult(year.id, parsed.data.number);
-    const rank = candidate && candidate.decision !== "ANNULE"
-      ? await getCandidateRank(year.id, candidate.series, Number(candidate.average))
+    const ranks = candidate
+      ? await getCandidateRanks(year.id, { series: candidate.series, wilaya: candidate.wilaya, school: candidate.school, examCenter: candidate.examCenter, average: Number(candidate.average), decision: candidate.decision })
       : null;
 
     recordSearch(parsed.data.number, year.year, Boolean(candidate));
 
     return NextResponse.json(
-      { candidate: candidate ? { ...serializeCandidate(candidate), rank } : null, year: year.year },
+      { candidate: candidate ? { ...serializeCandidate(candidate), rank: ranks?.series ?? null, ranks } : null, year: year.year },
       { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } }
     );
   } catch (error) {

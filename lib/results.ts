@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
-import { PAGE_SIZE } from "@/lib/constants";
+import { NAME_SEARCH_LIMIT, NAME_SEARCH_MAX_WORDS, PAGE_SIZE } from "@/lib/constants";
 import { withDatabaseRetry } from "@/lib/database-retry";
 
 export async function getPublishedYear(requestedYear?: number) {
@@ -35,15 +35,63 @@ export async function findCandidateResult(examYearId: string, candidateNumber: s
   );
 }
 
-/** Rank within series, excluding ANNULE - mirrors the exclusion rule already used by resultWhere/browseResults. Covered by the existing @@index([examYearId, series, average]). */
-export async function getCandidateRank(examYearId: string, series: string, average: number, database = db) {
-  const ahead = await withDatabaseRetry(
-    () => database.candidate.count({
-      where: { examYearId, series, decision: { not: "ANNULE" }, average: { gt: average } }
-    }),
-    "candidate-rank-read"
-  );
-  return ahead + 1;
+export type CandidateRanks = { series: number | null; wilaya: number | null; school: number | null; examCenter: number | null; national: number | null };
+
+/**
+ * Numeric rank within each scope (series/wilaya/school/examCenter/national), excluding
+ * ANNULE candidates from the pool - mirrors the exclusion rule already used by
+ * resultWhere/browseResults. A cancelled candidate never receives a rank in any scope.
+ * A scope with no recorded value (missing wilaya/school/examCenter) is reported as null
+ * rather than guessed. Reads are sequential, not Promise.all'd: the production pool is
+ * a single connection (see getFilterOptions), so a request must not race itself for it.
+ */
+export async function getCandidateRanks(
+  examYearId: string,
+  candidate: { series: string; wilaya: string | null; school: string | null; examCenter: string | null; average: number; decision: string },
+  database = db
+): Promise<CandidateRanks> {
+  if (candidate.decision === "ANNULE") return { series: null, wilaya: null, school: null, examCenter: null, national: null };
+  return withDatabaseRetry(async () => {
+    const ahead = (scope: Prisma.CandidateWhereInput) => database.candidate.count({
+      where: { ...scope, examYearId, decision: { not: "ANNULE" }, average: { gt: candidate.average } }
+    });
+    const series = await ahead({ series: candidate.series });
+    const wilaya = candidate.wilaya ? await ahead({ wilaya: candidate.wilaya }) : null;
+    const school = candidate.school ? await ahead({ school: candidate.school }) : null;
+    const examCenter = candidate.examCenter ? await ahead({ examCenter: candidate.examCenter }) : null;
+    const national = await ahead({});
+    return {
+      series: series + 1,
+      wilaya: wilaya === null ? null : wilaya + 1,
+      school: school === null ? null : school + 1,
+      examCenter: examCenter === null ? null : examCenter + 1,
+      national: national + 1
+    };
+  }, "candidate-ranks-read", { timeoutMs: 20_000 });
+}
+
+/**
+ * Word-AND substring search over fullName, case-insensitive, tolerant of extra/collapsed
+ * whitespace on either side (query words are matched independently, in any order, against
+ * whatever spacing the stored name actually has). No new index: at ~50k rows per year a
+ * sequential ILIKE scan is cheap, and adding a trigram index would need a schema migration
+ * (pg_trgm extension) that isn't justified by this dataset size - see lib/results.ts callers.
+ */
+export async function searchCandidatesByName(examYearId: string, query: string, database = db) {
+  const words = query.trim().split(/\s+/).filter(Boolean).slice(0, NAME_SEARCH_MAX_WORDS);
+  if (words.length === 0) return { candidates: [], hasMore: false };
+  return withDatabaseRetry(async () => {
+    const rows = await database.candidate.findMany({
+      where: { examYearId, AND: words.map((word) => ({ fullName: { contains: word, mode: "insensitive" as const } })) },
+      select: { candidateNumber: true, fullName: true, series: true, average: true, decision: true, wilaya: true, examCenter: true, school: true },
+      orderBy: [{ fullName: "asc" }, { candidateNumber: "asc" }],
+      take: NAME_SEARCH_LIMIT + 1
+    });
+    return {
+      candidates: rows.slice(0, NAME_SEARCH_LIMIT).map((row) => ({ ...row, average: Number(row.average) })),
+      hasMore: rows.length > NAME_SEARCH_LIMIT
+    };
+  }, "candidate-name-search-read", { timeoutMs: 15_000 });
 }
 
 function present(values: Array<string | null>) {
@@ -119,11 +167,12 @@ export function resultWhere(examYearId: string, filters: { series: string; wilay
   return scoped;
 }
 
+/** Average, then name, then candidate number as a final deterministic tie-breaker so paginated/ranked order never shifts between two reads. */
 export function resultOrder(sort: string): Prisma.CandidateOrderByWithRelationInput[] {
-  if (sort === "lowest") return [{ average: "asc" }, { fullName: "asc" }];
+  if (sort === "lowest") return [{ average: "asc" }, { fullName: "asc" }, { candidateNumber: "asc" }];
   if (sort === "name") return [{ fullName: "asc" }, { candidateNumber: "asc" }];
   if (sort === "number") return [{ candidateNumber: "asc" }];
-  return [{ average: "desc" }, { fullName: "asc" }];
+  return [{ average: "desc" }, { fullName: "asc" }, { candidateNumber: "asc" }];
 }
 
 export async function browseResults(examYearId: string, filters: { series: string; wilaya: string; center: string; school: string; sort: string; page: number }, database = db) {
