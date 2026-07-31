@@ -2,7 +2,7 @@
 
 **READ THIS FILE FIRST, before doing anything, if you are a new Claude conversation picking up this project.** It is the current source of truth for what's done, what's in progress, and what must not be skipped. Do not re-derive this from memory or assumptions — verify against the live repo/database if anything here seems stale, and update this file as state changes.
 
-Last updated: 2026-07-31 (UTC), end of the **result-search UX + recent searches** phase. Live in production at https://mth-bac.vercel.app.
+Last updated: 2026-07-31 (UTC), end of the **result-page reorder (mobile UI refinement)** phase. Live in production at https://mth-bac.vercel.app.
 
 ---
 
@@ -27,6 +27,7 @@ Last updated: 2026-07-31 (UTC), end of the **result-search UX + recent searches*
 11. **Result-page improvements + PDF export — completed and deployed** (details below): subjects now display automatically (no click), a redesigned summary/ranking section shows real "X out of Y" ranks, and a new "Download PDF" button generates a real (non-screenshot) bilingual A4 PDF of the full result.
 12. **Performance optimization — completed and deployed** (details below): homepage Top Candidates now server-rendered (no blank-then-fetch wait), candidate-number search caches recent lookups and auto-searches, and a real production-database bug was found and fixed where the public filter-options query (series/wilaya/school/center dropdowns) was silently pulling the entire candidate table over the wire instead of letting Postgres deduplicate it — cut from 3-9s to ~0.3-0.7s per call.
 13. **Result-search UX + recent searches — completed and deployed** (details below): a localStorage-backed "recent searches" chip list (last 5, number+year only, no PII), a fixed auto-search debounce bug (year changes for the same number no longer got silently skipped), and an in-flight-request guard so an identical number+year search is never fired twice concurrently.
+14. **Result-page reorder (mobile UI refinement) — completed and deployed** (details below): reordered the result card's content per an explicit operator spec (name/number → result+average → conditional pass/fail message → 2×2 candidate-details grid → stream+school rankings only → subject grades → actions), added a `seriesTotal` field to the ranking system so the stream rank can show as "X out of Y", and added a compact pass/fail message pair to the dictionary. No visual redesign, no color/spacing changes beyond what the reorder required, no other feature touched.
 
 ---
 
@@ -412,6 +413,60 @@ Committed as `30ea37d` and pushed to `main` (git-linked Vercel auto-deploy, same
 1. A real-browser/mobile spot-check of the recent-searches chips (RTL layout, tap target size, wrapping with 5 chips on a narrow screen).
 2. If this component grows further, consider adding a `home-experience.test.tsx` (none exists today) covering the auto-search/cache/recent-search interactions directly rather than only through typecheck+build+live checks.
 
+## Result-page reorder (mobile UI refinement) phase — completed and deployed
+
+**Objective**: reorganize the result card's content order per an explicit, itemized operator spec, without redesigning it — no color changes, no new features, no touching components not named in the spec (subject-grade calculations, PDF layout, share-card image, caching, recent searches, all left untouched).
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `components/result-card.tsx` | Reordered the card's JSX to: (1) candidate name + number, (2) decision badge + average ("result card", primary focus), (3) a conditional pass/fail message, (4) the 4 candidate-detail tiles as a 2×2 grid on mobile (`grid-cols-2`, was single-column below `sm:`), (5) a rankings section now showing only stream (series) + school ranks, (6) the unchanged `SubjectGradesSection`, (7) Share/PDF actions, moved from above the details grid to below the subject grades. Removed the national/exam-center `RankTile`s and the now-unused `Globe2` icon import. |
+| `lib/results.ts` | `CandidateRanks` and `getCandidateRanks()` gained a `seriesTotal` field — the same `total({ series })` pattern already used for `schoolTotal`/`examCenterTotal`, added as a 9th parallel query in the existing `Promise.all`. Needed because the spec requires the stream ranking to render as "X out of Y" like the school ranking already does, and no such total existed before this phase (only a bare `series` rank, used solely for badge logic). `national`/`examCenter`/`nationalTotal`/`examCenterTotal` are all still computed and returned unchanged — only the web result card stopped displaying them; the PDF (`app/api/public/candidate-result-pdf`) and badge logic (`lib/badges.ts`) still use the full set and were not touched. |
+| `lib/i18n.ts` | Added `resultPassTitle` / `resultPassSubtitle` (Arabic: exact operator-specified text; French: equivalent translation) and `resultFailMessage` (same). The pre-existing `congratulations` key was left in place (unused by the new message, kept in case anything else references it later) rather than deleted, since deleting working, harmless code wasn't part of the requested scope. |
+| `tests/results.test.ts`, `tests/badges.test.ts` | Updated the `CandidateRanks` fixtures/assertions to include `seriesTotal`, and added an explicit call-count/where-clause assertion for the new `total({ series })` query. |
+
+### Behavior of the conditional message (item 3 of the spec)
+
+- `decision` classifies to `ADMIS` → shows `resultPassTitle` (bold, celebrate-colored) + `resultPassSubtitle` (muted) — two lines, compact.
+- `decision` classifies to `REDOUBLE` → shows `resultFailMessage` only (single muted line).
+- `SESSIONNAIRE` (second session), `ABSENT`, `ANNULE`, or any unrecognized decision string → no message at all, exactly as specified ("Do NOT display any message" for second session; nothing in the spec calls for a message in the other cases either, so none was added — avoids inventing UI copy the operator didn't ask for).
+- The existing confetti (`SuccessCelebration`, ADMIS-only) and share/PDF button behavior are unchanged.
+
+### Candidate-details grid (item 4)
+
+The 4 detail tiles (series/school/center/wilaya) were already in the exact row-major order the spec requires (stream, school / center, wilaya) — only the grid's mobile column count needed to change. Previously the `dl` had no explicit column count below the `sm:` breakpoint, so with no `grid-template-columns` set, each `dt`/`dd` pair rendered as its own full-width row (the "four separate vertical cards" the spec described). Added `grid-cols-2` as the base (mobile) class; `lg:grid-cols-4` (desktop) is unchanged, preserving the desktop layout exactly as required.
+
+### Rankings section (item 5)
+
+Now renders at most 2 tiles — stream (`dict.rankLabel`, "الترتيب في الشعبة" / "Rang dans la série", a pre-existing dictionary key that was defined but never rendered anywhere before this phase) and school (`dict.rankSchoolLabel`, unchanged) — each still using the existing `RankTile` component, which still hides itself entirely (renders nothing) whenever its rank or total is null, so a candidate with a missing school never shows a fake/zero tile. `showRankings` (the section's own visibility gate) was updated to match: it now checks series+school availability instead of national/school/examCenter. No ranking math changed for any candidate — `series`/`school`'s rank computation is byte-for-byte the same as before; only `seriesTotal` is new, and it was verified against live production data (see below) to be internally consistent (e.g. candidate 15049, series SN: rank 2340 of 37280).
+
+### Actions moved (item 7)
+
+`ShareButton` and `DownloadResultPdfButton` moved from a `mt-6` row directly under the average/badge (i.e., above the details grid) to a new `border-t p-5` section directly after `SubjectGradesSection` — same wrapper/spacing pattern already used by the rankings and subject-grades section headers elsewhere in this component, not a new visual pattern.
+
+### Verification performed
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | Passed |
+| `npx eslint . --max-warnings=0` | Passed, zero warnings |
+| `npm test` | 203/203 passed (21 files) |
+| `npm run build` | Passed (after releasing the Windows Prisma DLL lock held by a stale local dev server on port 3000 — same known, previously-documented issue; the server was stopped, the build re-run clean, and a fresh dev server was started afterward for the live-data checks below, then stopped again before committing) |
+| Local dev server against the live production database — `/api/public/search` for one candidate per decision type | ADMIS (15049, SN): `ranks.series=2340, seriesTotal=37280`. REDOUBLE (42942, M): `ranks.series=1628, seriesTotal=2102`. SESSIONNAIRE (54851, SN, found via a read-only Prisma lookup since no SESSIONNAIRE candidate number was already on hand from prior phases): `ranks.series=3970, seriesTotal=37280`. All three returned complete, correctly-shaped JSON with the new `seriesTotal` field populated. |
+| Local: `/api/public/candidate-result-pdf` for candidate 15049 | HTTP 200, valid 1-page PDF (confirmed via `file`), unaffected by this phase's changes as expected (PDF still shows national/school/center ranks — that document was not in scope) |
+| Local: `/api/public/candidate-grades` for candidate 15049 | Subject list returned correctly, unaffected |
+| Local: Arabic (default) and French (`moribac_language=fr` cookie) homepage | `<html lang="ar" dir="rtl">` and `<html lang="fr" dir="ltr">` respectively, both HTTP 200 |
+| Live production (`https://mth-bac.vercel.app`), same 3 candidates + PDF + both locales, re-run post-deploy | Every value matched the local pre-deploy result exactly, including the new `seriesTotal` numbers |
+
+**Honest limitation, consistent with every prior UI phase in this project**: this environment has no browser-automation/screenshot tool. The reordered layout, the 2×2 mobile grid, and the conditional message were verified by reading the rendered JSX logic directly (which decision maps to which message, which grid classes apply at which breakpoint) and by confirming every underlying data value (`ranks.series`, `ranks.seriesTotal`, `ranks.school`, `ranks.schoolTotal`, decision, subject grades) is correct end-to-end against live production — not by opening the page in an actual mobile browser. If you have browser tooling available, a real spot-check (ideally on an actual phone, in both Arabic/RTL and French/LTR, for a PASS/FAIL/SECOND-SESSION candidate each) is the one thing this phase could not directly observe, same as noted for every earlier UI phase in this document.
+
+### Deployment
+
+Committed as `08f9b55` and pushed to `main` (git-linked Vercel auto-deploy, same workflow as every prior phase). Deployment `dpl_9eeMcec6EqnsR1rLsRpNioc5bpkX` (target: production), created `2026-07-31T15:46:07Z`, reached `Ready`, aliased to **https://mth-bac.vercel.app** (also `mori-bac.vercel.app`). Live re-verification immediately after (table above) matched the pre-deploy local checks exactly.
+
+---
+
 ## Remaining known limitations
 
 1. **11 of the 21 BAC subject codes still have `nameFr: null`** (not guessed, per the operator's explicit instruction): `AF, AT, CH, CM, DM, DS, EL, ME, PH, PI, TA`. Their `nameAr` is confirmed (read directly off the official screenshots), and every coefficient/order/mapping for them is confirmed — only the French display label is missing. Both the web UI and the PDF fall back to the Arabic name (`subjectDisplayName()` in `lib/grades/subject-grades-client.ts`) when `nameFr` is null — verified rendering *correctly* in both places (the PDF specifically needed a per-cell font override, see above, since the fallback text is Arabic script even inside a French document). Not a blocker; resolve when an authoritative French source is available, then re-run `prisma/seed-subject-schemes-2026.ts` (idempotent) and redeploy.
@@ -419,7 +474,7 @@ Committed as `30ea37d` and pushed to `main` (git-linked Vercel auto-deploy, same
 
 ## Current final project status
 
-**Live and verified.** The BAC subject-grades feature (full 2026 dataset), the redesigned result summary/ranking section with real "X out of Y" values, automatic (no-click) subject display, and the bilingual PDF export are all deployed to production at **https://mth-bac.vercel.app** (deployment `dpl_6BrAk1dbSpbUN5mZFEKuFWmUxxU4`). No known data, backend, or PDF-rendering defects remain — every one found during this phase (variable-font glyph corruption, an Amiri ligature bug, emoji-in-PDF, mixed-script fallback font, bidi number reordering, footer/pagination overlap) was fixed and re-verified by rendering and visually inspecting the actual output, not assumed fixed.
+**Live and verified.** The BAC subject-grades feature (full 2026 dataset), the redesigned/reordered result card (name → result+average → conditional message → 2×2 details grid → stream+school rankings → subject grades → actions), automatic (no-click) subject display, the bilingual PDF export, recent searches, and all performance work are all deployed to production at **https://mth-bac.vercel.app** (latest deployment `dpl_9eeMcec6EqnsR1rLsRpNioc5bpkX`). No known data, backend, or PDF-rendering defects remain — every one found in earlier phases (variable-font glyph corruption, an Amiri ligature bug, emoji-in-PDF, mixed-script fallback font, bidi number reordering, footer/pagination overlap) was fixed and re-verified by rendering and visually inspecting the actual output, not assumed fixed.
 
 ## Next recommended step (optional, not blocking)
 
