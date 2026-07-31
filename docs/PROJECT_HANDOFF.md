@@ -2,13 +2,13 @@
 
 **READ THIS FILE FIRST, before doing anything, if you are a new Claude conversation picking up this project.** It is the current source of truth for what's done, what's in progress, and what must not be skipped. Do not re-derive this from memory or assumptions — verify against the live repo/database if anything here seems stale, and update this file as state changes.
 
-Last updated: 2026-07-31 (UTC), end of the BAC 2026 grade **production import** phase. Import is done and verified. Deployment has not happened yet.
+Last updated: 2026-07-31 (UTC), end of the **deployment and live verification** phase. The BAC 2026 subject-grades feature is now live in production at https://mth-bac.vercel.app.
 
 ---
 
 ## Current objective
 
-The BAC subject-grades feature is now fully live in the database (not yet on the public website — deployment is the next, separate, approval-gated step). Original objective was: finish the BAC subject-grades feature (per-subject marks, not just the overall average) and get the **BAC 2026 subject-grade dataset** (extracted from Najahi, 516,956 rows / 64,532 candidates) safely imported — without ever guessing academic data (subject names, coefficients, curriculum order) that wasn't confirmed from an authoritative source. **That import is now complete.** What remains is deploying the application and verifying the change on the live public site.
+**Done.** Original objective was: finish the BAC subject-grades feature (per-subject marks, not just the overall average), get the **BAC 2026 subject-grade dataset** (516,956 rows / 64,532 candidates) safely imported without ever guessing academic data, and deploy it — all without guessing subject names/coefficients/order that weren't confirmed from an authoritative source. All of that is complete and live. What remains is a narrow, well-defined gap: 11 subject codes still have no confirmed French name (see below) — everything else is done.
 
 ---
 
@@ -22,7 +22,8 @@ The BAC subject-grades feature is now fully live in the database (not yet on the
 6. **Official BAC 2026 screenshots provided by the operator** (one per series: SN, M, LM, LA, LO, TM, TS) — treated as the authoritative source. Every subject, coefficient, and display order was extracted and cross-validated against the raw-data order recovered in step 5 (100% positional match everywhere independently checkable). All 21 subject codes across all 7 series were matched with certainty. **11 codes have no confirmed French name and are stored as `null`, not guessed**: `AF, AT, CH, CM, DM, DS, EL, ME, PH, PI, TA`.
 7. **Database backup, migrations, and SubjectScheme seed — completed and verified** (details below).
 8. **Read-only BAC 2026 grade dry-run validation — completed and verified, zero database writes, zero rejections** (details below). The dataset is confirmed ready for production import.
-9. **Production import of `bac2026_import_ready.json` — completed and verified** (details below). All 516,956 rows are now live in `CandidateSubjectGrade`. The application has **not** been deployed yet.
+9. **Production import of `bac2026_import_ready.json` — completed and verified** (details below). All 516,956 rows are now live in `CandidateSubjectGrade`.
+10. **Deployment and live end-to-end verification — completed** (details below). The application is live at https://mth-bac.vercel.app with all 7 series verified against the real production API.
 
 ---
 
@@ -130,9 +131,55 @@ For every one of the 7 candidates: candidate identity/average/decision loaded co
 
 ---
 
-## What was explicitly NOT done yet (by instruction)
+## Deployment and live verification — completed
 
-- **The application has not been deployed.** The database now has the full BAC 2026 subject-grade dataset live, but the public website has not been redeployed/re-verified against it yet.
+**Deployment timestamp (UTC)**: commit `5e7d4f5` pushed to `main` at `2026-07-31T02:22Z` (approx.); Vercel deployment `dpl_8Etnw8kxmpMMDxGrJ4T1pYDhiqST` started building `2026-07-31T02:28:51Z`, reached `Ready` ~1 minute later.
+
+**Deployment identifier / URL**: production deployment `dpl_8Etnw8kxmpMMDxGrJ4T1pYDhiqST`, aliased to **https://mth-bac.vercel.app** (also aliased to `mori-bac.vercel.app` and two project-scoped `*.vercel.app` URLs — `mth-bac.vercel.app` is the canonical one to use).
+
+**Method**: this is a git-linked Vercel project (`.vercel/project.json` → project `mth-bac`, org `mth-25053s-projects`; confirmed authenticated via `vercel whoami` before starting). The existing production workflow is: commit → `git push origin main` → Vercel's GitHub integration auto-builds and deploys. That's what was used — no ad-hoc `vercel --prod` CLI deploy, no bypass of the normal pipeline. The build ran exactly `prisma generate && next build` (the project's own `build` script) — **no migration or seed step runs during deployment**, so this step could not and did not touch grade data, matching the instruction not to modify or re-import anything.
+
+Before pushing, `.agents/`, `.claude/`, and `skills-lock.json` (Claude Code tooling/local-settings artifacts, not application code) were deliberately excluded from the commit — only the actual application changes (63 grade-feature files, this doc, migrations, seed script) were staged and committed.
+
+**Final safety checks immediately before deploying (all re-run fresh, all passed):**
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | Passed |
+| `npx eslint . --max-warnings=0` | Passed, zero warnings |
+| `npm test` | 205/205 passed (21 files) |
+| `npm run build` | Passed |
+
+**Pre-deploy production database re-confirmation** (read-only, immediately before pushing): `CandidateSubjectGrade` = 516,956, `SubjectScheme` = 63, `GradeImportBatch` = 1 row with status `IMPORTED`. All matched exactly.
+
+### Live verification results — all 7 series, against the real deployed production API
+
+Verified by calling the actual live endpoints (`https://mth-bac.vercel.app/api/public/search` and `/api/public/candidate-grades`) — not a library function, not localhost — for the same 7 candidates checked pre-deployment:
+
+| Series | Candidate | Page/API loads | General info correct | Subject count | Order correct | Coefficients correct | Marks correct | EXEMPT handling |
+|---|---|---|---|---|---|---|---|---|
+| SN | 15049 | HTTP 200 | ✓ (Diondo Makhan Gandega, avg 10, ADMIS) | 8/8 | ✓ | ✓ | ✓ | n/a (all GRADED) |
+| M | 42942 | HTTP 200 | ✓ (avg 5.34, REDOUBLE) | 8/8 | ✓ | ✓ | ✓ | n/a (all GRADED) |
+| LM | 16875 | HTTP 200 | ✓ (avg 6.59, REDOUBLE) | 8/8 | ✓ | ✓ | ✓ | n/a (all GRADED) |
+| LO | 64903 | HTTP 200 | ✓ (avg 0, ABSENT) | 8/8 | ✓ | ✓ | ✓ | ✓ EP row: `EXEMPT`, mark `null` |
+| TM | 17739 | HTTP 200 | ✓ (avg 3.14, REDOUBLE) | 11/11 | ✓ | ✓ | ✓ | n/a (all GRADED) |
+| TS | 58544 | HTTP 200 | ✓ (avg 7.62, REDOUBLE) | 11/11 | ✓ | ✓ | ✓ | ✓ EP row: `EXEMPT`, mark `null` |
+| LA | 28756 | HTTP 200 | ✓ (avg 12.77, ADMIS) | 9/9 | ✓ | ✓ | ✓ | n/a (all GRADED) |
+
+Every value returned by the live production API — subject codes, order, coefficients, marks, `nameAr`/`nameFr` (including `null` for the 11 unresolved codes, correctly still `null` live) — matched exactly what was verified locally before deployment. Zero discrepancies.
+
+**Additional live checks:**
+
+| Check | Result |
+|---|---|
+| Arabic homepage (`/`, default) | HTTP 200, `<html lang="ar" dir="rtl">` |
+| French homepage (`moribac_language=fr` cookie) | HTTP 200, `<html lang="fr" dir="ltr">` |
+| Protected admin route (`/admin/grade-import`, unauthenticated) | HTTP 307 (redirects to login — correct, not a crash) |
+| Public API with invalid/missing params | HTTP 400 with a clean `{"error":"INVALID_NUMBER"}` body — not a 500 |
+
+**Honest limitation on this verification**: I do not have a real browser-automation tool available in this environment (no Playwright/screenshot capability). Everything above was verified by calling the live production HTTP endpoints directly and inspecting the exact JSON/HTML returned — this rigorously proves the data (subject count, order, coefficients, marks, EXEMPT logic, locale attributes, error handling) is correct on the live site. It does **not** prove browser-console-error-free rendering or actual mobile CSS/viewport behavior, since neither can be observed without a real browser. No fix was needed for anything checkable — if you (or a future session with browser tooling) spot-check one of the 7 candidates above in an actual mobile browser and something looks wrong, it would be a frontend/CSS issue, not a data issue — the data itself is confirmed correct end-to-end.
+
+**Fixes made during deployment**: none were needed — no unexpected error occurred at any step.
 
 ---
 
@@ -184,11 +231,16 @@ For every one of the 7 candidates: candidate identity/average/decision loaded co
 
 **11 of the 21 BAC subject codes still have `nameFr: null`** (not guessed, per the operator's explicit instruction): `AF, AT, CH, CM, DM, DS, EL, ME, PH, PI, TA`. Their `nameAr` is confirmed (read directly off the official screenshots), and every coefficient/order/mapping for them is confirmed — only the French display label is missing. The public subject-grades UI (`components/subject-grades-section.tsx`) falls back to the Arabic name (or the raw code, per `subjectDisplayName()` in `lib/grades/subject-grades-client.ts`) when `nameFr` is null, so this does not block display — a French-locale user will just see the Arabic name or code for these 11 subjects until the French names are confirmed and the seed script (`prisma/seed-subject-schemes-2026.ts`) is updated and re-run (it's an idempotent upsert, safe to re-run).
 
-## Next recommended step
+## Current final project status
 
-**Deploy the application, then verify the change on the live public website.**
+**Live and verified.** The BAC subject-grades feature, including the full BAC 2026 dataset (516,956 rows / 64,532 candidates), is deployed to production at **https://mth-bac.vercel.app** and confirmed correct via direct calls to the live API for one candidate per series (SN, M, LM, LO, TM, TS, LA). No known data or backend defects remain.
 
-Suggested verification once deployed: search for one or two of the same candidates verified above (e.g. `15049` for SN, `64903` for LO — the one with a real EXEMPT EP row) on the live public site, open "عرض درجات المواد / Voir les notes par matière", and confirm the subject list, order, coefficients, marks, and the EXEMPT label render correctly in the actual browser UI (not just via the library function, which was what this phase verified). This is the one thing not yet checked end-to-end through the real HTTP/browser path.
+## Next recommended step (optional, not blocking)
+
+Two things worth doing when convenient, neither urgent:
+
+1. **A real-browser spot-check** of one or two of the 7 candidates above (ideally on an actual mobile device/viewport), since this session could only verify the underlying data via direct API calls, not actual rendered UI/console/mobile layout (see the "Honest limitation" note above).
+2. **Resolve the 11 remaining French subject names** (see "Remaining known limitation" below) if/when an authoritative French-language source becomes available, then re-run `prisma/seed-subject-schemes-2026.ts` (idempotent) and redeploy.
 
 ---
 
