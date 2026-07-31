@@ -50,3 +50,32 @@ export const knownSeriesCreateSchema = z.object({
 export const pageViewSchema = z.object({
   path: z.string().trim().min(1).max(200)
 }).strict();
+
+export const subjectSchemeCreateSchema = z.object({
+  examYearId: z.string().trim().min(1),
+  series: z.string().trim().min(1).max(50),
+  subjectCode: z.string().trim().min(1).max(20),
+  nameAr: z.string().trim().max(200).nullable().optional(),
+  nameFr: z.string().trim().max(200).nullable().optional(),
+  coefficient: z.coerce.number().min(0).max(99.99).nullable().optional(),
+  displayOrder: z.coerce.number().int().min(0).max(1000)
+}).strict();
+
+export const subjectSchemeUpdateSchema = z.object({
+  nameAr: z.string().trim().max(200).nullable().optional(),
+  nameFr: z.string().trim().max(200).nullable().optional(),
+  coefficient: z.coerce.number().min(0).max(99.99).nullable().optional(),
+  displayOrder: z.coerce.number().int().min(0).max(1000).optional()
+}).strict();
+
+export const subjectSchemeDiscoveryConfirmSchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
+  schemes: z.array(z.object({
+    series: z.string().trim().min(1).max(50),
+    subjectCode: z.string().trim().min(1).max(20),
+    nameAr: z.string().trim().max(200).nullable().optional(),
+    nameFr: z.string().trim().max(200).nullable().optional(),
+    coefficient: z.coerce.number().min(0).max(99.99).nullable().optional(),
+    displayOrder: z.coerce.number().int().min(0).max(1000)
+  }).strict()).min(1).max(500)
+}).strict();

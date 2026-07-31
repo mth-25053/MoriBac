@@ -192,11 +192,17 @@ export async function browseResults(examYearId: string, filters: { series: strin
     const total = await database.candidate.count({ where });
     let statistics = null;
     if (detailed) {
-      const passed = await database.candidate.count({ where: { AND: [where, { decision: "ADMIS" }] } });
-      const session = await database.candidate.count({ where: { AND: [where, { decision: "SESSIONNAIRE" }] } });
-      const failed = await database.candidate.count({ where: { AND: [where, { decision: "REDOUBLE" }] } });
-      const cancelled = await database.candidate.count({ where: { AND: [where, { decision: "ANNULE" }] } });
-      const absent = await database.candidate.count({ where: { AND: [where, { decision: "ABSENT" }] } });
+      // A single grouped count replaces 5 separate count() round-trips. Any decision value
+      // outside the 5 known buckets (e.g. an unmapped raw string) simply has no matching
+      // entry below and is - exactly as before - excluded from all 5 buckets while still
+      // counted in `total`.
+      const decisionCounts = await database.candidate.groupBy({ by: ["decision"], where, _count: { _all: true } });
+      const countFor = (decision: string) => decisionCounts.find((row) => row.decision === decision)?._count._all ?? 0;
+      const passed = countFor("ADMIS");
+      const session = countFor("SESSIONNAIRE");
+      const failed = countFor("REDOUBLE");
+      const cancelled = countFor("ANNULE");
+      const absent = countFor("ABSENT");
       const aggregate = await database.candidate.aggregate({ where, _max: { average: true }, _min: { average: true } });
       statistics = {
         total,

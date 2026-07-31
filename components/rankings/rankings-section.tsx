@@ -60,7 +60,15 @@ export function RankingsSection({
   }, [series, wilaya]);
 
   const optionsAbort = useRef<AbortController | null>(null);
+  // The very first run would fetch the exact same unfiltered options the parent already
+  // fetched to build `initialOptions` (same year, no series/wilaya) - skip that one redundant
+  // request and reuse what was passed in. Any later run (a real filter change) fetches as before.
+  const isFirstOptionsRun = useRef(true);
   useEffect(() => {
+    if (isFirstOptionsRun.current) {
+      isFirstOptionsRun.current = false;
+      if (year === initialYear && !series && !wilaya) return;
+    }
     optionsAbort.current?.abort();
     const controller = new AbortController();
     optionsAbort.current = controller;
@@ -74,7 +82,7 @@ export function RankingsSection({
       .catch((fetchError) => { if ((fetchError as { name?: string })?.name !== "AbortError") { /* keep previous options, filters remain usable */ } })
       .finally(() => { if (optionsAbort.current === controller) setOptionsLoading(false); });
     return () => controller.abort();
-  }, [year, series, wilaya]);
+  }, [year, series, wilaya, initialYear]);
 
   const resultsAbort = useRef<AbortController | null>(null);
   useEffect(() => {

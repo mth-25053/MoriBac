@@ -7,7 +7,6 @@ import { IMPORT_CHUNK_SIZE } from "@/lib/import-upload-config";
 
 type PrismaTransaction = Prisma.TransactionClient;
 
-const MAX_CHUNKS = Math.ceil(MAX_UPLOAD_SIZE / IMPORT_CHUNK_SIZE);
 export const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type ImportUploadMetadata = {
@@ -23,11 +22,25 @@ function validUploadId(value: string) {
   return /^[a-zA-Z0-9-]{20,100}$/.test(value);
 }
 
-export function validateUploadMetadata(value: ImportUploadMetadata, chunkSize: number) {
+const DEFAULT_ALLOWED_EXTENSIONS = [".xlsx"];
+
+export type UploadValidationOptions = {
+  /** Defaults to Excel-only so the candidate-results importer keeps its exact current behavior unchanged. */
+  allowedExtensions?: string[];
+  /** Defaults to MAX_UPLOAD_SIZE (the candidate-results limit). The grade importer passes MAX_GRADE_UPLOAD_SIZE instead - each import type owns its own ceiling, so widening one never affects the other. */
+  maxUploadSize?: number;
+};
+
+export function validateUploadMetadata(value: ImportUploadMetadata, chunkSize: number, options: UploadValidationOptions = {}) {
+  const allowedExtensions = options.allowedExtensions ?? DEFAULT_ALLOWED_EXTENSIONS;
+  const maxUploadSize = options.maxUploadSize ?? MAX_UPLOAD_SIZE;
+  const maxChunks = Math.ceil(maxUploadSize / IMPORT_CHUNK_SIZE);
+
   if (!validUploadId(value.uploadId)) throw new Error("INVALID_UPLOAD_ID");
-  if (!value.fileName || value.fileName.length > 255 || !value.fileName.toLowerCase().endsWith(".xlsx")) throw new Error("INVALID_FILE_TYPE");
-  if (!Number.isInteger(value.fileSize) || value.fileSize <= 0 || value.fileSize > MAX_UPLOAD_SIZE) throw new Error("FILE_SIZE");
-  if (!Number.isInteger(value.totalChunks) || value.totalChunks < 1 || value.totalChunks > MAX_CHUNKS) throw new Error("INVALID_UPLOAD_CHUNKS");
+  const lowerFileName = value.fileName.toLowerCase();
+  if (!value.fileName || value.fileName.length > 255 || !allowedExtensions.some((extension) => lowerFileName.endsWith(extension))) throw new Error("INVALID_FILE_TYPE");
+  if (!Number.isInteger(value.fileSize) || value.fileSize <= 0 || value.fileSize > maxUploadSize) throw new Error("FILE_SIZE");
+  if (!Number.isInteger(value.totalChunks) || value.totalChunks < 1 || value.totalChunks > maxChunks) throw new Error("INVALID_UPLOAD_CHUNKS");
   if (!Number.isInteger(value.chunkIndex) || value.chunkIndex < 0 || value.chunkIndex >= value.totalChunks) throw new Error("INVALID_UPLOAD_CHUNK");
   if (chunkSize <= 0 || chunkSize > IMPORT_CHUNK_SIZE) throw new Error("INVALID_UPLOAD_CHUNK_SIZE");
   const expectedChunks = Math.ceil(value.fileSize / IMPORT_CHUNK_SIZE);
@@ -45,8 +58,8 @@ export async function expireStaleUploads(tx: PrismaTransaction, adminId: string,
   });
 }
 
-export async function saveImportChunk(adminId: string, metadata: ImportUploadMetadata, data: Buffer) {
-  validateUploadMetadata(metadata, data.length);
+export async function saveImportChunk(adminId: string, metadata: ImportUploadMetadata, data: Buffer, options: UploadValidationOptions = {}) {
+  validateUploadMetadata(metadata, data.length, options);
   return withDatabaseRetry(
     () => db.$transaction(async (tx) => {
       await expireStaleUploads(tx, adminId, new Date(Date.now() - UPLOAD_TTL_MS));

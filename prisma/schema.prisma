@@ -14,14 +14,31 @@ enum ImportStatus {
   FAILED
 }
 
+enum GradeImportSourceType {
+  JSON
+  CSV
+  EXCEL
+}
+
+enum GradeImportStatus {
+  UPLOADED
+  VALIDATING
+  VALIDATED
+  IMPORTING
+  IMPORTED
+  FAILED
+  ROLLED_BACK
+}
+
 model Admin {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  passwordHash  String
-  imports       ImportBatch[]
-  importUploads ImportUpload[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                 String             @id @default(cuid())
+  email              String             @unique
+  passwordHash       String
+  imports            ImportBatch[]
+  importUploads      ImportUpload[]
+  gradeImportBatches GradeImportBatch[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 }
 
 model ImportUpload {
@@ -50,24 +67,26 @@ model ImportUploadChunk {
 }
 
 model ExamYear {
-  id          String        @id @default(cuid())
-  year        Int           @unique
-  isPublished Boolean       @default(false)
-  isDefault   Boolean       @default(false)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  candidates  Candidate[]
-  imports     ImportBatch[]
+  id                 String             @id @default(cuid())
+  year               Int                @unique
+  isPublished        Boolean            @default(false)
+  isDefault          Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  candidates         Candidate[]
+  imports            ImportBatch[]
+  subjectSchemes     SubjectScheme[]
+  gradeImportBatches GradeImportBatch[]
 
   @@index([isPublished, isDefault])
 }
 
 model Candidate {
-  id               String      @id @default(cuid())
+  id               String                  @id @default(cuid())
   candidateNumber  String
   fullName         String
   series           String
-  average          Decimal     @db.Decimal(5, 2)
+  average          Decimal                 @db.Decimal(5, 2)
   decision         String
   officialDecision String?
   wilaya           String?
@@ -78,9 +97,10 @@ model Candidate {
   candidateType    String?
   examYearId       String
   importBatchId    String
-  createdAt        DateTime    @default(now())
-  examYear         ExamYear    @relation(fields: [examYearId], references: [id], onDelete: Cascade)
-  importBatch      ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  createdAt        DateTime                @default(now())
+  examYear         ExamYear                @relation(fields: [examYearId], references: [id], onDelete: Cascade)
+  importBatch      ImportBatch             @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  subjectGrades    CandidateSubjectGrade[]
 
   @@unique([examYearId, candidateNumber])
   @@index([candidateNumber])
@@ -129,6 +149,134 @@ model ImportError {
   importBatch   ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
 
   @@index([importBatchId])
+}
+
+/**
+ * Reusable source-field mapping for subject-grade files, generalizing ExcelMapping's
+ * structureKey-cached approach to JSON and CSV sources too, not just Excel. Keeps any
+ * particular source's field names (e.g. a first-party data provider's own schema) out
+ * of code entirely - a differently-shaped source is handled by saving a new mapping
+ * row, never by changing the importer.
+ */
+model GradeSourceMapping {
+  id           String                @id @default(cuid())
+  sourceType   GradeImportSourceType
+  structureKey String
+  fieldMapping Json
+  lastUsedAt   DateTime              @default(now())
+  createdAt    DateTime              @default(now())
+
+  @@unique([sourceType, structureKey])
+}
+
+/**
+ * One immutable subject definition per exam year + exam type + series + subject code.
+ * Deliberately no versioning in this release: a curriculum change between years is
+ * already a different examYearId, which is the dominant real-world case. Mid-year
+ * corrections are rare enough that, if one is ever needed, it's a deliberate follow-up
+ * migration rather than complexity carried from day one.
+ */
+model SubjectScheme {
+  id           String                  @id @default(cuid())
+  examYearId   String
+  examType     String                  @default("bac")
+  series       String
+  subjectCode  String
+  nameAr       String?
+  nameFr       String?
+  coefficient  Decimal?                @db.Decimal(4, 2)
+  displayOrder Int
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  examYear     ExamYear                @relation(fields: [examYearId], references: [id], onDelete: Cascade)
+  grades       CandidateSubjectGrade[]
+
+  @@unique([examYearId, examType, series, subjectCode])
+  @@index([examYearId, examType, series])
+}
+
+enum GradeStatus {
+  GRADED
+  EXEMPT
+}
+
+model CandidateSubjectGrade {
+  id              String            @id @default(cuid())
+  candidateId     String
+  subjectSchemeId String
+  /**
+   * Null exactly when status is EXEMPT - a candidate exempted from a subject (e.g. EP/Physical Education) has no numeric mark, and this is never guessed.
+   */
+  mark            Decimal?          @db.Decimal(5, 2)
+  status          GradeStatus       @default(GRADED)
+  sourceBatchId   String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  candidate       Candidate         @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  subjectScheme   SubjectScheme     @relation(fields: [subjectSchemeId], references: [id], onDelete: Restrict)
+  sourceBatch     GradeImportBatch? @relation(fields: [sourceBatchId], references: [id], onDelete: SetNull)
+
+  @@unique([candidateId, subjectSchemeId])
+  @@index([sourceBatchId])
+}
+
+/**
+ * Resumable, source-agnostic import tracking for subject-grade files - the grade
+ * equivalent of ImportBatch/ImportError, kept as a separate table family so the
+ * existing candidate importer is never touched by this feature.
+ * NOTE: the migration for this model also hand-adds a partial unique index
+ * (`CREATE UNIQUE INDEX ... WHERE status = 'IMPORTING'`) enforcing at most one
+ * IMPORTING batch per examYearId. Prisma's schema DSL cannot express a partial
+ * unique index, so it exists only in the migration SQL, not here - do not
+ * assume `prisma migrate dev` alone would reproduce it.
+ */
+model GradeImportBatch {
+  id                       String                  @id @default(cuid())
+  sourceFileName           String
+  sourceType               GradeImportSourceType
+  examYearId               String
+  examType                 String                  @default("bac")
+  checksum                 String                  @unique
+  /**
+   * Fingerprint of SubjectScheme rows for this year/type at dry-run time - re-checked at commit so an edited/added/removed subject after the dry run forces a new one.
+   */
+  schemeChecksum           String
+  /**
+   * Fingerprint of the ImportBatch set + candidate count for this year at dry-run time - re-checked at commit so a re-import or undo after the dry run forces a new one.
+   */
+  candidateDatasetChecksum String
+  status                   GradeImportStatus
+  totalRows                Int
+  validatedRows            Int                     @default(0)
+  importedRows             Int                     @default(0)
+  rejectedRows             Int                     @default(0)
+  progressRows             Int                     @default(0)
+  failureReason            String?
+  dryRunReport             Json?
+  adminId                  String
+  uploadId                 String?
+  startedAt                DateTime?
+  completedAt              DateTime?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  examYear                 ExamYear                @relation(fields: [examYearId], references: [id], onDelete: Cascade)
+  admin                    Admin                   @relation(fields: [adminId], references: [id], onDelete: Restrict)
+  errors                   GradeImportError[]
+  grades                   CandidateSubjectGrade[]
+
+  @@index([examYearId, status])
+}
+
+model GradeImportError {
+  id        String           @id @default(cuid())
+  rowNumber Int
+  field     String?
+  message   String
+  rawData   Json?
+  batchId   String
+  batch     GradeImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
 }
 
 model ExcelMapping {

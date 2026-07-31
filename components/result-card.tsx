@@ -6,6 +6,7 @@ import { computeBadges } from "@/lib/badges";
 import type { CandidateRanks } from "@/lib/results";
 import { SuccessCelebration } from "@/components/success-celebration";
 import { ShareButton } from "@/components/share-button";
+import { SubjectGradesSection } from "@/components/subject-grades-section";
 
 export type CandidateView = {
   candidateNumber: string;
@@ -94,5 +95,7 @@ export function ResultCard({ candidate, dict, locale, year }: { candidate: Candi
         <RankTile icon={Building2} label={dict.rankCenterLabel} value={candidate.ranks.examCenter} dict={dict} />
       </dl>
     </div>}
+
+    <SubjectGradesSection candidateNumber={candidate.candidateNumber} year={year} dict={dict} locale={locale} />
   </article>;
 }

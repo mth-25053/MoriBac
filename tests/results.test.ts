@@ -34,41 +34,48 @@ describe("ranking and browsing business rules", () => {
 
   it("includes every decision in center rows, counts cancelled/absent, and reports the full average range", async () => {
     const findMany = vi.fn().mockResolvedValue([candidate({ series: "M" }), candidate({ candidateNumber: "10000", series: "SN" })]);
-    const count = vi.fn()
-      .mockResolvedValueOnce(120)
-      .mockResolvedValueOnce(40)
-      .mockResolvedValueOnce(20)
-      .mockResolvedValueOnce(55)
-      .mockResolvedValueOnce(3)
-      .mockResolvedValueOnce(2);
+    const count = vi.fn().mockResolvedValueOnce(120);
+    const groupBy = vi.fn().mockResolvedValue([
+      { decision: "ADMIS", _count: { _all: 40 } },
+      { decision: "SESSIONNAIRE", _count: { _all: 20 } },
+      { decision: "REDOUBLE", _count: { _all: 55 } },
+      { decision: "ANNULE", _count: { _all: 3 } },
+      { decision: "ABSENT", _count: { _all: 2 } }
+    ]);
     const aggregate = vi.fn().mockResolvedValue({ _max: { average: 17.95 }, _min: { average: 4.1 } });
-    const database = { candidate: { findMany, count, aggregate } };
+    const database = { candidate: { findMany, count, groupBy, aggregate } };
     const result = await browseResults("year", { ...filters, center: "Centre", page: 2, sort: "name" }, database as never);
     const where = { examYearId: "year", series: "M", wilaya: "Trarza", examCenter: "Centre" };
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where, take: 50, skip: 50 }));
-    expect(count.mock.calls.map((call) => call[0])).toEqual([
-      { where },
-      { where: { AND: [where, { decision: "ADMIS" }] } },
-      { where: { AND: [where, { decision: "SESSIONNAIRE" }] } },
-      { where: { AND: [where, { decision: "REDOUBLE" }] } },
-      { where: { AND: [where, { decision: "ANNULE" }] } },
-      { where: { AND: [where, { decision: "ABSENT" }] } }
-    ]);
+    expect(count).toHaveBeenCalledWith({ where });
+    expect(groupBy).toHaveBeenCalledWith({ by: ["decision"], where, _count: { _all: true } });
     expect(aggregate).toHaveBeenCalledWith({ where, _max: { average: true }, _min: { average: true } });
     expect(result.pageCount).toBe(3);
     expect(result.statistics).toMatchObject({ total: 120, passed: 40, session: 20, failed: 55, cancelled: 3, absent: 2, highest: 17.95, lowest: 4.1, successRate: 40 / 120 * 100 });
   });
 
+  it("excludes decision values outside the 5 known buckets from every bucket while still counting them in total", async () => {
+    const findMany = vi.fn().mockResolvedValue([candidate()]);
+    const count = vi.fn().mockResolvedValueOnce(10);
+    const groupBy = vi.fn().mockResolvedValue([
+      { decision: "ADMIS", _count: { _all: 6 } },
+      { decision: "UNRECOGNIZED_RAW_TEXT", _count: { _all: 4 } }
+    ]);
+    const database = { candidate: { findMany, count, groupBy, aggregate: vi.fn().mockResolvedValue({ _max: { average: 15 }, _min: { average: 5 } }) } };
+    const result = await browseResults("year", { ...filters, school: "School" }, database as never);
+    expect(result.statistics).toMatchObject({ total: 10, passed: 6, session: 0, failed: 0, cancelled: 0, absent: 0 });
+  });
+
   it("includes every decision in school rows and rankings", async () => {
     const findMany = vi.fn().mockResolvedValue([candidate({ series: "LO" }), candidate({ candidateNumber: "10001", series: "SN" })]);
-    const database = { candidate: { findMany, count: vi.fn().mockResolvedValue(2), aggregate: vi.fn().mockResolvedValue({ _max: { average: 10 }, _min: { average: 5 } }) } };
+    const database = { candidate: { findMany, count: vi.fn().mockResolvedValue(2), groupBy: vi.fn().mockResolvedValue([]), aggregate: vi.fn().mockResolvedValue({ _max: { average: 10 }, _min: { average: 5 } }) } };
     await browseResults("year", { ...filters, school: "School" }, database as never);
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { examYearId: "year", series: "M", wilaya: "Trarza", school: "School" } }));
   });
 
   it("scopes a school roster to matching names when searching within it", async () => {
     const findMany = vi.fn().mockResolvedValue([candidate({ fullName: "Ahmed Salem" })]);
-    const database = { candidate: { findMany, count: vi.fn().mockResolvedValue(1), aggregate: vi.fn().mockResolvedValue({ _max: { average: 8.47 }, _min: { average: 8.47 } }) } };
+    const database = { candidate: { findMany, count: vi.fn().mockResolvedValue(1), groupBy: vi.fn().mockResolvedValue([]), aggregate: vi.fn().mockResolvedValue({ _max: { average: 8.47 }, _min: { average: 8.47 } }) } };
     await browseResults("year", { series: "", wilaya: "", center: "", school: "School", name: "Ahmed", sort: "highest", page: 1 }, database as never);
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { examYearId: "year", school: "School", fullName: { contains: "Ahmed", mode: "insensitive" } } }));
   });

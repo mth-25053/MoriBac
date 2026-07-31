@@ -4,6 +4,8 @@ export const LANGUAGE_COOKIE = "moribac_language";
 export const THEME_COOKIE = "moribac_theme";
 export const PAGE_SIZE = 50;
 export const MAX_UPLOAD_SIZE = 15 * 1024 * 1024;
+/** Separate, larger ceiling for subject-grade files (large JSON/CSV exports), independent of MAX_UPLOAD_SIZE so widening it never affects the candidate-results importer. */
+export const MAX_GRADE_UPLOAD_SIZE = 150 * 1024 * 1024;
 export const SESSION_DURATION_SECONDS = 60 * 60 * 8;
 
 export const DECISIONS = ["ADMIS", "SESSIONNAIRE", "REDOUBLE", "ABSENT", "ANNULE"] as const;
