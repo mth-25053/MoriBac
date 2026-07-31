@@ -6,7 +6,9 @@ import { classifyDecision, decisionBadgeClass } from "@/lib/decision";
 import { formatAverage } from "@/lib/format";
 import { ResultCard, type CandidateView } from "@/components/result-card";
 import { RankingsSection } from "@/components/rankings/rankings-section";
+import { RecentSearches } from "@/components/recent-searches";
 import type { FilterOptions, RankingsResponse } from "@/components/rankings/types";
+import { clearRecentSearches, loadRecentSearches, saveRecentSearch, type RecentSearch } from "@/lib/recent-searches";
 
 type Meta = { year: number | null; notices: { ar: string; fr: string }; years: { year: number; isDefault: boolean }[]; options: FilterOptions };
 type NameMatch = { candidateNumber: string; fullName: string; series: string; average: number; decision: string; wilaya: string | null; examCenter: string | null; school: string | null };
@@ -41,33 +43,60 @@ export function HomeExperience({
   const inFlight = useRef<AbortController | null>(null);
   const resultRef = useRef<HTMLDivElement | null>(null);
   const nameAbort = useRef<AbortController | null>(null);
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   // Recent candidate-number lookups, keyed by "number:year" - repeating a search (re-typing
   // the same number, or coming back via browser navigation) shows the result instantly
   // instead of round-tripping to the API again. Bounded so it never grows unbounded in a
-  // single long-lived tab.
-  const numberCache = useRef<Map<string, CandidateView | null>>(new Map());
+  // single long-lived tab. In-memory only (session cache) - never persisted, unlike
+  // recentSearches above, which is number+year only, no result data (see lib/recent-searches.ts).
+  const numberCache = useRef<Map<string, { candidate: CandidateView | null; year: string }>>(new Map());
+  // "number:year" of the last request that actually resolved (found or not-found) - lets the
+  // auto-search effect below skip re-firing for a key it already has an answer for, while still
+  // searching again the moment either the number or the selected year genuinely changes.
+  const lastOpenedKey = useRef<string>("");
+  // "number:year" currently in flight - a second trigger for the identical key (e.g. a stray
+  // keystroke firing the debounce right as Enter is also pressed) is a no-op, not a duplicate request.
+  const inFlightKey = useRef<string | null>(null);
+
+  useEffect(() => { setRecentSearches(loadRecentSearches()); }, []);
+
+  function selectRecentSearch(candidateNumber: string, recentYear: string) {
+    setYear(recentYear);
+    openCandidate(candidateNumber, recentYear);
+  }
+
+  function handleClearRecentSearches() {
+    clearRecentSearches();
+    setRecentSearches([]);
+  }
 
   async function openCandidate(candidateNumber: string, yearOverride?: string) {
     const useYear = yearOverride ?? year;
     const cacheKey = `${candidateNumber}:${useYear}`;
+    if (inFlightKey.current === cacheKey) return;
+
     const cached = numberCache.current.get(cacheKey);
     if (cached !== undefined) {
       inFlight.current?.abort();
-      setSearchError(cached ? "" : dict.notFound);
-      setCandidate(cached);
+      inFlightKey.current = null;
+      lastOpenedKey.current = cacheKey;
+      setSearchError(cached.candidate ? "" : dict.notFound);
+      setCandidate(cached.candidate);
       setNumber(candidateNumber);
       setMode("number");
+      if (cached.candidate) setRecentSearches(saveRecentSearch(candidateNumber, cached.year));
       const url = new URL(window.location.href);
       url.searchParams.set("number", candidateNumber);
       if (useYear) url.searchParams.set("year", useYear);
       window.history.replaceState(null, "", url);
-      if (cached) requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      if (cached.candidate) requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
       return;
     }
 
     inFlight.current?.abort();
     const controller = new AbortController();
     inFlight.current = controller;
+    inFlightKey.current = cacheKey;
     setSearching(true);
     setSearchError("");
     setCandidate(null);
@@ -77,15 +106,18 @@ export function HomeExperience({
       const response = await fetch(`/api/public/search?${query}`, { signal: controller.signal });
       const data = await response.json();
       if (!response.ok) { setSearchError(dict.serviceUnavailable); return; }
-      numberCache.current.set(cacheKey, data.candidate ?? null);
+      const resolvedYear = data.year ? String(data.year) : useYear;
+      numberCache.current.set(cacheKey, { candidate: data.candidate ?? null, year: resolvedYear });
       if (numberCache.current.size > NUMBER_SEARCH_CACHE_LIMIT) {
         const oldest = numberCache.current.keys().next().value;
         if (oldest !== undefined) numberCache.current.delete(oldest);
       }
+      lastOpenedKey.current = cacheKey;
       if (!data.candidate) { setSearchError(dict.notFound); return; }
       setCandidate(data.candidate);
       setNumber(candidateNumber);
       setMode("number");
+      setRecentSearches(saveRecentSearch(candidateNumber, resolvedYear));
       const url = new URL(window.location.href);
       url.searchParams.set("number", candidateNumber);
       if (useYear) url.searchParams.set("year", useYear);
@@ -96,6 +128,7 @@ export function HomeExperience({
       setSearchError(dict.serviceUnavailable);
     } finally {
       if (inFlight.current === controller) setSearching(false);
+      if (inFlightKey.current === cacheKey) inFlightKey.current = null;
     }
   }
 
@@ -131,7 +164,7 @@ export function HomeExperience({
     if (mode !== "number") return;
     const clean = number.trim();
     if (!clean || !/^\d+$/.test(clean)) return;
-    if (candidate && candidate.candidateNumber === clean) return;
+    if (lastOpenedKey.current === `${clean}:${year}`) return;
     const timer = setTimeout(() => { openCandidate(clean); }, 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -208,28 +241,31 @@ export function HomeExperience({
           <button type="button" role="tab" aria-selected={mode === "name"} className="button secondary !min-h-10 !py-2" style={mode === "name" ? { background: "var(--accent-soft)", color: "var(--accent-strong)" } : undefined} onClick={() => switchMode("name")}><UserRound size={16} />{dict.searchModeName}</button>
         </div>
 
-        {mode === "number" && <form onSubmit={submitNumber} noValidate>
-          <label className="label" htmlFor="candidate-number">{dict.candidateNumber}</label>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <input
-              id="candidate-number"
-              className="field flex-1 text-center text-xl font-black tracking-wide sm:text-start"
-              dir="ltr"
-              inputMode="numeric"
-              autoComplete="off"
-              value={number}
-              onChange={(event) => { setNumber(event.target.value); setSearchError(""); }}
-              aria-describedby="search-hint search-error"
-              aria-invalid={Boolean(searchError)}
-              placeholder="00001"
-            />
-            <button className="button sm:min-w-40" disabled={searching}>
-              {searching ? <span className="size-5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Search size={19} />} {searching ? dict.searching : dict.search}
-            </button>
-          </div>
-          <p id="search-hint" className="muted mt-3 text-xs">{dict.searchHint}</p>
-          {searchError && <p id="search-error" role="alert" className="mt-3 text-sm font-bold text-[var(--danger)]">{searchError}</p>}
-        </form>}
+        {mode === "number" && <>
+          <form onSubmit={submitNumber} noValidate>
+            <label className="label" htmlFor="candidate-number">{dict.candidateNumber}</label>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                id="candidate-number"
+                className="field flex-1 text-center text-xl font-black tracking-wide sm:text-start"
+                dir="ltr"
+                inputMode="numeric"
+                autoComplete="off"
+                value={number}
+                onChange={(event) => { setNumber(event.target.value); setSearchError(""); }}
+                aria-describedby="search-hint search-error"
+                aria-invalid={Boolean(searchError)}
+                placeholder="00001"
+              />
+              <button className="button sm:min-w-40" disabled={searching} aria-busy={searching}>
+                {searching ? <span className="size-5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Search size={19} />} {searching ? dict.searching : dict.search}
+              </button>
+            </div>
+            <p id="search-hint" className="muted mt-3 text-xs">{dict.searchHint}</p>
+            {searchError && <p id="search-error" role="alert" className="mt-3 text-sm font-bold text-[var(--danger)]">{searchError}</p>}
+          </form>
+          <RecentSearches dict={dict} items={recentSearches} onSelect={selectRecentSearch} onClear={handleClearRecentSearches} />
+        </>}
 
         {mode === "name" && <div>
           <label className="label" htmlFor="candidate-name-search">{dict.searchModeName}</label>
