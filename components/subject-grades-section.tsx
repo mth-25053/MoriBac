@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Dictionary, Locale } from "@/lib/i18n";
 import { fetchSubjectGrades, subjectDisplayName, type SubjectGradesState } from "@/lib/grades/subject-grades-client";
 
+/**
+ * Loads and displays subject grades automatically on mount - no click required.
+ * The idle/button state was removed per product requirement: subjects must be
+ * visible immediately, directly below the candidate's main result information.
+ */
 export function SubjectGradesSection({ candidateNumber, year, dict, locale }: { candidateNumber: string; year: number; dict: Dictionary; locale: Locale }) {
-  const [state, setState] = useState<SubjectGradesState>({ status: "idle" });
+  const [state, setState] = useState<SubjectGradesState>({ status: "loading" });
 
   async function load() {
     setState({ status: "loading" });
@@ -13,11 +18,10 @@ export function SubjectGradesSection({ candidateNumber, year, dict, locale }: { 
     setState(result);
   }
 
-  if (state.status === "idle") {
-    return <div className="relative z-[2] border-t p-5" style={{ borderColor: "var(--line)" }}>
-      <button type="button" className="button secondary w-full sm:w-auto" onClick={load}>{dict.viewSubjectGrades}</button>
-    </div>;
-  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidateNumber, year]);
 
   return <div className="relative z-[2] border-t p-5" style={{ borderColor: "var(--line)" }}>
     <p className="text-sm font-black">{dict.subjectGradesTitle}</p>

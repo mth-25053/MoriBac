@@ -35,7 +35,11 @@ export async function findCandidateResult(examYearId: string, candidateNumber: s
   );
 }
 
-export type CandidateRanks = { series: number | null; wilaya: number | null; school: number | null; examCenter: number | null; national: number | null };
+export type CandidateRanks = {
+  series: number | null; wilaya: number | null; school: number | null; examCenter: number | null; national: number | null;
+  /** Total candidates in each scope (the "Y" in "rank X of Y") - null exactly when the corresponding rank is null. */
+  nationalTotal: number | null; schoolTotal: number | null; examCenterTotal: number | null;
+};
 
 /**
  * Numeric rank within each scope (series/wilaya/school/examCenter/national), excluding
@@ -44,28 +48,43 @@ export type CandidateRanks = { series: number | null; wilaya: number | null; sch
  * A scope with no recorded value (missing wilaya/school/examCenter) is reported as null
  * rather than guessed. Reads are sequential, not Promise.all'd: the production pool is
  * a single connection (see getFilterOptions), so a request must not race itself for it.
+ * Totals (nationalTotal/schoolTotal/examCenterTotal) are real counts of the same
+ * non-ANNULE pool the rank was computed against - never estimated or derived from the
+ * rank alone - so "X out of Y" is always two independently real numbers.
  */
 export async function getCandidateRanks(
   examYearId: string,
   candidate: { series: string; wilaya: string | null; school: string | null; examCenter: string | null; average: number; decision: string },
   database = db
 ): Promise<CandidateRanks> {
-  if (candidate.decision === "ANNULE") return { series: null, wilaya: null, school: null, examCenter: null, national: null };
+  if (candidate.decision === "ANNULE") {
+    return { series: null, wilaya: null, school: null, examCenter: null, national: null, nationalTotal: null, schoolTotal: null, examCenterTotal: null };
+  }
   return withDatabaseRetry(async () => {
     const ahead = (scope: Prisma.CandidateWhereInput) => database.candidate.count({
       where: { ...scope, examYearId, decision: { not: "ANNULE" }, average: { gt: candidate.average } }
     });
+    const total = (scope: Prisma.CandidateWhereInput) => database.candidate.count({ where: { ...scope, examYearId, decision: { not: "ANNULE" } } });
+
     const series = await ahead({ series: candidate.series });
     const wilaya = candidate.wilaya ? await ahead({ wilaya: candidate.wilaya }) : null;
     const school = candidate.school ? await ahead({ school: candidate.school }) : null;
     const examCenter = candidate.examCenter ? await ahead({ examCenter: candidate.examCenter }) : null;
     const national = await ahead({});
+
+    const schoolTotal = candidate.school ? await total({ school: candidate.school }) : null;
+    const examCenterTotal = candidate.examCenter ? await total({ examCenter: candidate.examCenter }) : null;
+    const nationalTotal = await total({});
+
     return {
       series: series + 1,
       wilaya: wilaya === null ? null : wilaya + 1,
       school: school === null ? null : school + 1,
       examCenter: examCenter === null ? null : examCenter + 1,
-      national: national + 1
+      national: national + 1,
+      nationalTotal,
+      schoolTotal,
+      examCenterTotal
     };
   }, "candidate-ranks-read", { timeoutMs: 20_000 });
 }

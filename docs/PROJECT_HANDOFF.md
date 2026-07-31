@@ -2,7 +2,7 @@
 
 **READ THIS FILE FIRST, before doing anything, if you are a new Claude conversation picking up this project.** It is the current source of truth for what's done, what's in progress, and what must not be skipped. Do not re-derive this from memory or assumptions — verify against the live repo/database if anything here seems stale, and update this file as state changes.
 
-Last updated: 2026-07-31 (UTC), end of the **deployment and live verification** phase. The BAC 2026 subject-grades feature is now live in production at https://mth-bac.vercel.app.
+Last updated: 2026-07-31 (UTC), end of the **result-page improvements + PDF export** phase. Live in production at https://mth-bac.vercel.app.
 
 ---
 
@@ -24,6 +24,7 @@ Last updated: 2026-07-31 (UTC), end of the **deployment and live verification** 
 8. **Read-only BAC 2026 grade dry-run validation — completed and verified, zero database writes, zero rejections** (details below). The dataset is confirmed ready for production import.
 9. **Production import of `bac2026_import_ready.json` — completed and verified** (details below). All 516,956 rows are now live in `CandidateSubjectGrade`.
 10. **Deployment and live end-to-end verification — completed** (details below). The application is live at https://mth-bac.vercel.app with all 7 series verified against the real production API.
+11. **Result-page improvements + PDF export — completed and deployed** (details below): subjects now display automatically (no click), a redesigned summary/ranking section shows real "X out of Y" ranks, and a new "Download PDF" button generates a real (non-screenshot) bilingual A4 PDF of the full result.
 
 ---
 
@@ -180,6 +181,68 @@ Every value returned by the live production API — subject codes, order, coeffi
 **Honest limitation on this verification**: I do not have a real browser-automation tool available in this environment (no Playwright/screenshot capability). Everything above was verified by calling the live production HTTP endpoints directly and inspecting the exact JSON/HTML returned — this rigorously proves the data (subject count, order, coefficients, marks, EXEMPT logic, locale attributes, error handling) is correct on the live site. It does **not** prove browser-console-error-free rendering or actual mobile CSS/viewport behavior, since neither can be observed without a real browser. No fix was needed for anything checkable — if you (or a future session with browser tooling) spot-check one of the 7 candidates above in an actual mobile browser and something looks wrong, it would be a frontend/CSS issue, not a data issue — the data itself is confirmed correct end-to-end.
 
 **Fixes made during deployment**: none were needed — no unexpected error occurred at any step.
+
+---
+
+## Result-page improvements + PDF export — completed and deployed
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `components/result-card.tsx` | Redesigned: reordered summary details (series/institution/center prioritized), replaced the 5-tile rank display with a 3-item national/institution/center "X out of Y" ranking section, added the PDF button next to the existing Share button |
+| `components/subject-grades-section.tsx` | Removed the idle state and its button; fetches automatically via `useEffect` on mount |
+| `components/download-result-pdf-button.tsx` | **New.** Client button: fetches the PDF route, downloads the blob with a safe filename, loading/error states |
+| `lib/results.ts` | `getCandidateRanks()` extended with `nationalTotal`/`schoolTotal`/`examCenterTotal` — real counts of the same non-ANNULE pool the rank itself is computed against |
+| `lib/i18n.ts` | Added `outOf`, `fullNameLabel`, `downloadResultPdf` (exact text specified), `pdfGenerating`/`pdfDownloaded`/`pdfFailed`, `subjectColumnLabel`/`coefficientColumnLabel`/`markColumnLabel`, `pdfGeneratedOn`, `pdfDocumentTitle`, `pdfDisclaimer` — Arabic + French |
+| `lib/pdf/fonts.ts` | **New.** Registers the two PDF fonts server-side from `public/fonts/pdf/` |
+| `lib/pdf/result-document.tsx` | **New.** The `@react-pdf/renderer` document component — A4, bilingual, RTL/LTR |
+| `app/api/public/candidate-result-pdf/route.tsx` | **New.** `GET` route: validates input, loads only the fields the PDF needs (no internal IDs), renders, returns as `application/pdf` with `Content-Disposition: attachment` |
+| `public/fonts/pdf/{Tajawal,Lato}-{Regular,Bold}.ttf` | **New.** Static (non-variable) font files embedded in the PDF — see "PDF implementation details" for why these specific fonts |
+| `tests/badges.test.ts`, `tests/results.test.ts`, `tests/subject-grades-section.test.tsx` | Updated for the new `CandidateRanks` fields and the click-free auto-fetch behavior |
+
+### UI changes completed
+
+- **Subjects display automatically.** `SubjectGradesSection` fetches on mount; the button and idle state are gone. Verified via `npm test` (loading/loaded/EXEMPT/empty/error/retry states, zero-click) and via the live production API for a candidate in every one of the 7 series plus two candidates with a real `EXEMPT` subject (LO, TS).
+- **Ranking section**: exactly national/institution/center, each rendered as "label: rank {outOf} total" (e.g. "الترتيب الوطني: 17558 من أصل 64333" / "Rang national : 17558 sur 64333"), and **only when both the rank and its total are real, non-null values** — `RankTile` returns `null` (renders nothing) otherwise, never a zero/placeholder/fake number.
+- **Summary**: name, number, series, institution, exam center, average, and status were already all present on the card; series/institution/center were reordered ahead of wilaya in the detail grid to match the requested priority. Average and status were already the most visually prominent elements (large accent-colored average, colored decision badge) and were left as-is.
+- Arabic/French, RTL/LTR, responsive grid classes, and the existing visual system (`surface`, `badge`, CSS custom properties) are all unchanged — only content/structure inside the existing card shape changed.
+
+### Ranking-data behavior
+
+`getCandidateRanks()` now computes, for national/school/examCenter only (series/wilaya ranks are still computed for the badge system but not surfaced in this new section): the candidate's 1-based rank (`count of same-scope non-ANNULE candidates with a strictly higher average, + 1`) **and** a real total (`count of same-scope non-ANNULE candidates`), as two independent queries against the same live data — never one derived from the other, never estimated. A scope with no recorded value (e.g. `school: null`) yields `null` for both its rank and its total, and the UI/PDF both hide that item entirely rather than showing `0` or `—`.
+
+### PDF implementation details
+
+- **Library**: `@react-pdf/renderer` (`renderToBuffer`, server-side, Node runtime) — produces a real vector/text PDF via its own layout engine, not a browser screenshot or rasterized image.
+- **Fonts — two real bugs found and fixed by rendering and visually inspecting test PDFs at every step, not by assumption:**
+  1. A **variable-weight** TTF (Google Fonts' `[wght]` axis format) silently produced **wrong Arabic glyphs** (dropped/substituted letters, not just wrong weight) under react-pdf's fontkit-based shaping. Fixed by using only genuinely static (non-variable) font files.
+  2. **Amiri** (a calligraphic Naskh typeface), tried next, rendered every Arabic string correctly *except* the word "ناجح" ("ADMIS"/passed — the single most important decision label in this app), which came out as a collapsed, illegible glyph in both weights — a reproducible font-specific ligature bug, confirmed by isolating the word alone in a minimal test PDF. Replaced with **Tajawal** (plain sans-serif, no calligraphic ligature table), verified correct for every decision/subject string actually used in this app, including "ناجح", in both weights.
+  - Final fonts: **Tajawal** (Arabic, Regular+Bold) and **Lato** (French/Latin, Regular+Bold), both static TTFs from Google Fonts (OFL), embedded from `public/fonts/pdf/`.
+  - A third, subtler bug: a subject with no confirmed French name falls back to its Arabic name (`subjectDisplayName()`) *even inside a French-locale PDF*. Since the French document's default font (Lato) has no Arabic glyphs, that fallback text rendered as garbage until a per-cell script check (`textFontFamily()` in `result-document.tsx`) was added to switch just that one table cell to the Arabic font regardless of document locale.
+  - A fourth bug, specific to `@react-pdf/textkit`'s bidi engine: a single `<Text>` with two interpolated Western-digit numbers around Arabic words (e.g. `"{rank} {outOf} {total}"`) rendered with the numbers visibly out of order (`"9 من أصل 24"` → `"من أصل 24 9"`). Fixed by rendering rank/connector/total as three separate `<Text>` nodes inside a `row-reverse` flex `View` — the same mechanism already used (and already proven correct) for the subject table's column order — instead of relying on in-paragraph bidi reordering for mixed number/Arabic content.
+  - A fifth issue (not a bug, expected behavior once diagnosed): the fixed-position footer was overlapping the last table row/spilling awkwardly. Fixed with a reserved `paddingBottom` on the page so content pagination always leaves room for the footer; an 11-subject series (TM, TS) now cleanly flows onto a clean page 2 when needed rather than a single cramped page.
+- **PDF content**: brand/title header, BAC year, candidate name/number/series/institution/exam center, average, decision (with its emoji prefix stripped — Tajawal/Lato have no emoji glyphs, confirmed as a real rendering bug the same way as the others above), national/institution/center ranks (only when available, in the same "X out of Y" form as the web page), the complete subject table (name/coefficient/mark-or-EXEMPT, same order as the website — both read from the same `getCandidateSubjectGrades()`), generation date/time, and the required disclaimer.
+- **Privacy**: the PDF data type (`ResultPdfData`) is deliberately narrow — no candidate `id`, `examYearId`, `importBatchId`, `birthDate`/`birthPlace`, or any other internal/private field is ever passed to the PDF renderer.
+- **Filename**: `mthbac-{year}-{candidateNumber}.pdf` (e.g. `mthbac-2026-58544.pdf`), set via `Content-Disposition`.
+- **Verified**: all 14 combinations (7 series × 2 locales) generated successfully against live production data and rasterized for direct visual inspection (not just "no error thrown") — including both EXEMPT-subject candidates (LO, TS) and the French-locale fallback-to-Arabic-name case (4 subjects on TS/TM). Every one checked correct after the fixes above.
+
+### Tests and build results
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | Passed |
+| `npx eslint . --max-warnings=0` | Passed, zero warnings |
+| `npm test` | 203/203 passed (21 files; 2 obsolete click-button tests removed, replaced with auto-fetch equivalents) |
+| `npm run build` | Passed (after releasing the Windows Prisma DLL lock held by the local dev server used for live-route testing — same known issue documented in `AUDIT_REPORT.md`) |
+
+### Deployment
+
+Committed and pushed to `main` (git-linked Vercel auto-deploy, same workflow as the prior phase). See the top of this document for the live URL; this section will be updated with the exact commit/deployment identifiers once pushed.
+
+### Honest limitation on this phase's verification
+
+Every PDF was verified by actually rendering it and visually inspecting a rasterized image (not just checking HTTP 200) — this is real, not assumed, verification of the PDF output specifically. However, as with the previous deployment phase, **I have no real browser-automation tool** in this environment. The web-page-level requirements (subjects appearing without a click, the new ranking section, mobile/desktop layout) were verified through the underlying data/API/component logic and the test suite, not by opening the live site in an actual mobile or desktop browser. If you have browser tooling available, a real spot-check of the live result page (ideally on an actual phone) is the one remaining thing this session could not directly confirm.
 
 ---
 

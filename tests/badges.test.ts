@@ -6,13 +6,13 @@ import type { CandidateRanks } from "@/lib/results";
 const dict = dictionaries.ar;
 
 function ranks(overrides: Partial<CandidateRanks> = {}): CandidateRanks {
-  return { series: 5, wilaya: 8, school: 12, examCenter: 3, national: 40, ...overrides };
+  return { series: 5, wilaya: 8, school: 12, examCenter: 3, national: 40, nationalTotal: 50000, schoolTotal: 300, examCenterTotal: 900, ...overrides };
 }
 
 describe("premium badge selection", () => {
   it("shows no badge for a candidate with no ranks (e.g. ANNULE)", () => {
     expect(computeBadges(dict, null)).toEqual([]);
-    expect(computeBadges(dict, { series: null, wilaya: null, school: null, examCenter: null, national: null })).toEqual([]);
+    expect(computeBadges(dict, { series: null, wilaya: null, school: null, examCenter: null, national: null, nationalTotal: null, schoolTotal: null, examCenterTotal: null })).toEqual([]);
   });
 
   it("prioritizes national first over every other badge", () => {
