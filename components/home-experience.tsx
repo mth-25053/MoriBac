@@ -6,19 +6,31 @@ import { classifyDecision, decisionBadgeClass } from "@/lib/decision";
 import { formatAverage } from "@/lib/format";
 import { ResultCard, type CandidateView } from "@/components/result-card";
 import { RankingsSection } from "@/components/rankings/rankings-section";
-import type { FilterOptions } from "@/components/rankings/types";
+import type { FilterOptions, RankingsResponse } from "@/components/rankings/types";
 
 type Meta = { year: number | null; notices: { ar: string; fr: string }; years: { year: number; isDefault: boolean }[]; options: FilterOptions };
 type NameMatch = { candidateNumber: string; fullName: string; series: string; average: number; decision: string; wilaya: string | null; examCenter: string | null; school: string | null };
 
-export function HomeExperience({ dict, locale }: { dict: Dictionary; locale: Locale }) {
+const NUMBER_SEARCH_CACHE_LIMIT = 20;
+
+export function HomeExperience({
+  dict,
+  locale,
+  initialMeta,
+  initialRankings
+}: {
+  dict: Dictionary;
+  locale: Locale;
+  initialMeta: Meta | null;
+  initialRankings: RankingsResponse | null;
+}) {
   const [mode, setMode] = useState<"number" | "name">("number");
   const [number, setNumber] = useState("");
-  const [year, setYear] = useState("");
+  const [year, setYear] = useState(initialMeta?.year ? String(initialMeta.year) : "");
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [candidate, setCandidate] = useState<CandidateView | null>(null);
-  const [meta, setMeta] = useState<Meta | null>(null);
+  const [meta, setMeta] = useState<Meta | null>(initialMeta);
 
   const [nameQuery, setNameQuery] = useState("");
   const [nameResults, setNameResults] = useState<NameMatch[]>([]);
@@ -29,9 +41,30 @@ export function HomeExperience({ dict, locale }: { dict: Dictionary; locale: Loc
   const inFlight = useRef<AbortController | null>(null);
   const resultRef = useRef<HTMLDivElement | null>(null);
   const nameAbort = useRef<AbortController | null>(null);
+  // Recent candidate-number lookups, keyed by "number:year" - repeating a search (re-typing
+  // the same number, or coming back via browser navigation) shows the result instantly
+  // instead of round-tripping to the API again. Bounded so it never grows unbounded in a
+  // single long-lived tab.
+  const numberCache = useRef<Map<string, CandidateView | null>>(new Map());
 
   async function openCandidate(candidateNumber: string, yearOverride?: string) {
     const useYear = yearOverride ?? year;
+    const cacheKey = `${candidateNumber}:${useYear}`;
+    const cached = numberCache.current.get(cacheKey);
+    if (cached !== undefined) {
+      inFlight.current?.abort();
+      setSearchError(cached ? "" : dict.notFound);
+      setCandidate(cached);
+      setNumber(candidateNumber);
+      setMode("number");
+      const url = new URL(window.location.href);
+      url.searchParams.set("number", candidateNumber);
+      if (useYear) url.searchParams.set("year", useYear);
+      window.history.replaceState(null, "", url);
+      if (cached) requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      return;
+    }
+
     inFlight.current?.abort();
     const controller = new AbortController();
     inFlight.current = controller;
@@ -44,6 +77,11 @@ export function HomeExperience({ dict, locale }: { dict: Dictionary; locale: Loc
       const response = await fetch(`/api/public/search?${query}`, { signal: controller.signal });
       const data = await response.json();
       if (!response.ok) { setSearchError(dict.serviceUnavailable); return; }
+      numberCache.current.set(cacheKey, data.candidate ?? null);
+      if (numberCache.current.size > NUMBER_SEARCH_CACHE_LIMIT) {
+        const oldest = numberCache.current.keys().next().value;
+        if (oldest !== undefined) numberCache.current.delete(oldest);
+      }
       if (!data.candidate) { setSearchError(dict.notFound); return; }
       setCandidate(data.candidate);
       setNumber(candidateNumber);
@@ -62,23 +100,42 @@ export function HomeExperience({ dict, locale }: { dict: Dictionary; locale: Loc
   }
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlNumber = params.get("number");
+
+    if (initialMeta) {
+      if (urlNumber && /^\d+$/.test(urlNumber)) openCandidate(urlNumber, initialMeta.year ? String(initialMeta.year) : "");
+      return;
+    }
+
     let cancelled = false;
     fetch("/api/public/meta")
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((data: Meta) => {
         if (cancelled) return;
         setMeta(data);
-        const params = new URLSearchParams(window.location.search);
         const urlYear = params.get("year");
         const resolvedYear = urlYear && data.years.some((y) => String(y.year) === urlYear) ? urlYear : (data.year ? String(data.year) : "");
         if (resolvedYear) setYear(resolvedYear);
-        const urlNumber = params.get("number");
         if (urlNumber && /^\d+$/.test(urlNumber)) openCandidate(urlNumber, resolvedYear);
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-search once the number is a valid candidate number and the visitor pauses typing -
+  // no button click required. A real Enter/click submit (below) still runs instantly instead
+  // of waiting out the debounce. A cache hit inside openCandidate resolves this immediately.
+  useEffect(() => {
+    if (mode !== "number") return;
+    const clean = number.trim();
+    if (!clean || !/^\d+$/.test(clean)) return;
+    if (candidate && candidate.candidateNumber === clean) return;
+    const timer = setTimeout(() => { openCandidate(clean); }, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [number, mode, year]);
 
   useEffect(() => {
     const trimmed = nameQuery.trim();
@@ -161,7 +218,7 @@ export function HomeExperience({ dict, locale }: { dict: Dictionary; locale: Loc
               inputMode="numeric"
               autoComplete="off"
               value={number}
-              onChange={(event) => setNumber(event.target.value)}
+              onChange={(event) => { setNumber(event.target.value); setSearchError(""); }}
               aria-describedby="search-hint search-error"
               aria-invalid={Boolean(searchError)}
               placeholder="00001"
@@ -226,6 +283,6 @@ export function HomeExperience({ dict, locale }: { dict: Dictionary; locale: Loc
       <div className="mt-6 text-center"><button className="button secondary" onClick={reset}>{dict.searchAgain}</button></div>
     </section>}
 
-    {meta?.year && <RankingsSection dict={dict} initialYear={meta.year} years={meta.years} initialOptions={meta.options} onSelectCandidate={openCandidate} />}
+    {meta?.year && <RankingsSection dict={dict} initialYear={meta.year} years={meta.years} initialOptions={meta.options} initialData={meta.year === initialMeta?.year ? initialRankings : null} onSelectCandidate={openCandidate} />}
   </>;
 }

@@ -6,12 +6,14 @@ export function FilterableList({
   items,
   value,
   onSelect,
+  onHoverItem,
   placeholder,
   emptyLabel
 }: {
   items: string[];
   value: string;
   onSelect: (value: string) => void;
+  onHoverItem?: (value: string) => void;
   placeholder: string;
   emptyLabel: string;
 }) {
@@ -26,7 +28,7 @@ export function FilterableList({
     </div>}
     <div className="filter-list" role="listbox">
       {filtered.length === 0 && <p className="muted p-3 text-sm">{emptyLabel}</p>}
-      {filtered.map((item) => <button key={item} type="button" role="option" aria-selected={value === item} className={`filter-list-item${value === item ? " active" : ""}`} onClick={() => onSelect(item)}><bdi>{item}</bdi></button>)}
+      {filtered.map((item) => <button key={item} type="button" role="option" aria-selected={value === item} className={`filter-list-item${value === item ? " active" : ""}`} onClick={() => onSelect(item)} onMouseEnter={() => onHoverItem?.(item)} onFocus={() => onHoverItem?.(item)}><bdi>{item}</bdi></button>)}
     </div>
   </div>;
 }

@@ -81,16 +81,26 @@ describe("ranking and browsing business rules", () => {
   });
 
   it("excludes ANNULE-only values from ranking filter options and keeps school independent of center", async () => {
-    const findMany = vi.fn()
+    const queryRaw = vi.fn()
       .mockResolvedValueOnce([{ series: "M" }])
       .mockResolvedValueOnce([{ wilaya: "Trarza" }])
       .mockResolvedValueOnce([{ examCenter: "Lycée Rosso" }])
       .mockResolvedValueOnce([{ school: "École Rosso" }]);
-    const database = { candidate: { findMany } };
+    const database = { $queryRaw: queryRaw };
     const options = await getFilterOptions("year", { series: "M", wilaya: "Trarza" }, database as never);
-    expect(findMany.mock.calls[0][0].where).toEqual(rankable("year"));
-    expect(findMany.mock.calls[2][0].where).toEqual({ ...rankable("year"), series: "M", wilaya: "Trarza", examCenter: { not: null } });
-    expect(findMany.mock.calls[3][0].where).toEqual({ ...rankable("year"), series: "M", wilaya: "Trarza", school: { not: null } });
+
+    // Real SQL DISTINCT, not Prisma's client-side `distinct` emulation (see getFilterOptions) -
+    // assert the query text/params directly since there is no `where` object to inspect anymore.
+    expect(queryRaw.mock.calls[0][0].sql).toContain('SELECT DISTINCT "series"');
+    expect(queryRaw.mock.calls[0][0].values).toEqual(["year"]);
+    expect(queryRaw.mock.calls[1][0].sql).toContain('SELECT DISTINCT "wilaya"');
+    expect(queryRaw.mock.calls[1][0].values).toEqual(["year", "M"]);
+    expect(queryRaw.mock.calls[2][0].sql).toContain('SELECT DISTINCT "examCenter"');
+    expect(queryRaw.mock.calls[2][0].values).toEqual(["year", "Trarza", "M"]);
+    expect(queryRaw.mock.calls[3][0].sql).toContain('SELECT DISTINCT "school"');
+    expect(queryRaw.mock.calls[3][0].values).toEqual(["year", "Trarza", "M"]);
+    expect(options.series).toEqual(["M"]);
+    expect(options.wilayas).toEqual(["Trarza"]);
     expect(options.centers).toEqual(["Lycée Rosso"]);
     expect(options.schools).toEqual(["École Rosso"]);
   });

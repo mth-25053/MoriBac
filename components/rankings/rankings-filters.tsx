@@ -23,6 +23,8 @@ export function RankingsFilters({
   onPath,
   onSchool,
   onCenter,
+  onPrefetchSchool,
+  onPrefetchCenter,
   onReset
 }: {
   dict: Dictionary;
@@ -40,6 +42,8 @@ export function RankingsFilters({
   onPath: (value: "school" | "center") => void;
   onSchool: (value: string) => void;
   onCenter: (value: string) => void;
+  onPrefetchSchool?: (value: string) => void;
+  onPrefetchCenter?: (value: string) => void;
   onReset: () => void;
 }) {
   return <div className="surface mt-8 p-4 sm:p-5">
@@ -71,11 +75,11 @@ export function RankingsFilters({
 
       {path === "school" && <div className="mt-3">
         <span className="label">{dict.school}</span>
-        <FilterableList items={options.schools} value="" onSelect={onSchool} placeholder={dict.schoolSearchPlaceholder} emptyLabel={dict.noResults} />
+        <FilterableList items={options.schools} value="" onSelect={onSchool} onHoverItem={onPrefetchSchool} placeholder={dict.schoolSearchPlaceholder} emptyLabel={dict.noResults} />
       </div>}
       {path === "center" && <div className="mt-3">
         <span className="label">{dict.center}</span>
-        <FilterableList items={options.centers} value="" onSelect={onCenter} placeholder={dict.centerSearchPlaceholder} emptyLabel={dict.noResults} />
+        <FilterableList items={options.centers} value="" onSelect={onCenter} onHoverItem={onPrefetchCenter} placeholder={dict.centerSearchPlaceholder} emptyLabel={dict.noResults} />
       </div>}
     </div>}
   </div>;

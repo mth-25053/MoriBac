@@ -21,12 +21,14 @@ export function RankingsSection({
   initialYear,
   years,
   initialOptions,
+  initialData,
   onSelectCandidate
 }: {
   dict: Dictionary;
   initialYear: number;
   years: YearOption[];
   initialOptions: FilterOptions;
+  initialData?: RankingsResponse | null;
   onSelectCandidate: (candidateNumber: string) => void;
 }) {
   const router = useRouter();
@@ -37,8 +39,8 @@ export function RankingsSection({
 
   const [options, setOptions] = useState<FilterOptions>(initialOptions);
   const [optionsLoading, setOptionsLoading] = useState(false);
-  const [data, setData] = useState<RankingsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<RankingsResponse | null>(initialData ?? null);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -85,7 +87,15 @@ export function RankingsSection({
   }, [year, series, wilaya, initialYear]);
 
   const resultsAbort = useRef<AbortController | null>(null);
+  // Mirrors isFirstOptionsRun above: the very first run would re-fetch the exact same
+  // unfiltered Top Candidates page the server already rendered into initialData - skip it
+  // and reuse what was passed in. Any later run (a real filter/year change) fetches as before.
+  const isFirstResultsRun = useRef(true);
   useEffect(() => {
+    if (isFirstResultsRun.current) {
+      isFirstResultsRun.current = false;
+      if (initialData && year === initialYear && !series && !wilaya) return;
+    }
     resultsAbort.current?.abort();
     const controller = new AbortController();
     resultsAbort.current = controller;
@@ -100,7 +110,7 @@ export function RankingsSection({
       .catch((fetchError) => { if ((fetchError as { name?: string })?.name !== "AbortError") setError(true); })
       .finally(() => { if (resultsAbort.current === controller) setLoading(false); });
     return () => controller.abort();
-  }, [year, series, wilaya]);
+  }, [year, series, wilaya, initialData, initialYear]);
 
   function selectYear(value: number) { setYear(value); setSeries(""); setWilaya(""); setPath(null); }
   function selectSeries(value: string) { setSeries(value); setWilaya(""); setPath(null); }
@@ -108,11 +118,23 @@ export function RankingsSection({
   function selectPath(value: "school" | "center") { setPath(value); }
   function reset() { setSeries(""); setWilaya(""); setPath(null); }
 
-  function goToEntity(kind: "school" | "center", name: string) {
+  function entityHref(kind: "school" | "center", name: string) {
     const query = new URLSearchParams({ year: String(year) });
     if (wilaya) query.set("wilaya", wilaya);
     if (series) query.set("series", series);
-    router.push(`/${kind === "school" ? "schools" : "centers"}/${encodeURIComponent(name)}?${query.toString()}`);
+    return `/${kind === "school" ? "schools" : "centers"}/${encodeURIComponent(name)}?${query.toString()}`;
+  }
+
+  function goToEntity(kind: "school" | "center", name: string) {
+    router.push(entityHref(kind, name));
+  }
+
+  // Warms the route's RSC payload as soon as the visitor's pointer/focus lands on a
+  // school/center option, so the click itself (goToEntity/router.push) resolves from
+  // cache instead of waiting on a fresh server round-trip - makes the navigation feel
+  // instant per the "every button should react immediately" requirement.
+  function prefetchEntity(kind: "school" | "center", name: string) {
+    router.prefetch(entityHref(kind, name));
   }
 
   const rest = data ? data.candidates.slice(3) : [];
@@ -140,6 +162,8 @@ export function RankingsSection({
       onPath={selectPath}
       onSchool={(name) => goToEntity("school", name)}
       onCenter={(name) => goToEntity("center", name)}
+      onPrefetchSchool={(name) => prefetchEntity("school", name)}
+      onPrefetchCenter={(name) => prefetchEntity("center", name)}
       onReset={reset}
     />
 
