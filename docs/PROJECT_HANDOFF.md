@@ -2,7 +2,7 @@
 
 **READ THIS FILE FIRST, before doing anything, if you are a new Claude conversation picking up this project.** It is the current source of truth for what's done, what's in progress, and what must not be skipped. Do not re-derive this from memory or assumptions — verify against the live repo/database if anything here seems stale, and update this file as state changes.
 
-Last updated: 2026-07-31 (UTC), end of the **performance optimization** phase. Live in production at https://mth-bac.vercel.app.
+Last updated: 2026-07-31 (UTC), end of the **result-search UX + recent searches** phase. Live in production at https://mth-bac.vercel.app.
 
 ---
 
@@ -26,6 +26,7 @@ Last updated: 2026-07-31 (UTC), end of the **performance optimization** phase. L
 10. **Deployment and live end-to-end verification — completed** (details below). The application is live at https://mth-bac.vercel.app with all 7 series verified against the real production API.
 11. **Result-page improvements + PDF export — completed and deployed** (details below): subjects now display automatically (no click), a redesigned summary/ranking section shows real "X out of Y" ranks, and a new "Download PDF" button generates a real (non-screenshot) bilingual A4 PDF of the full result.
 12. **Performance optimization — completed and deployed** (details below): homepage Top Candidates now server-rendered (no blank-then-fetch wait), candidate-number search caches recent lookups and auto-searches, and a real production-database bug was found and fixed where the public filter-options query (series/wilaya/school/center dropdowns) was silently pulling the entire candidate table over the wire instead of letting Postgres deduplicate it — cut from 3-9s to ~0.3-0.7s per call.
+13. **Result-search UX + recent searches — completed and deployed** (details below): a localStorage-backed "recent searches" chip list (last 5, number+year only, no PII), a fixed auto-search debounce bug (year changes for the same number no longer got silently skipped), and an in-flight-request guard so an identical number+year search is never fired twice concurrently.
 
 ---
 
@@ -335,6 +336,81 @@ This function runs on **every** homepage load (via `getHomeInitialData`) and on 
 ### Deployment
 
 Committed as `a862276` and pushed to `main` (git-linked Vercel auto-deploy). Deployment reached `Ready` and was aliased to **https://mth-bac.vercel.app**; live endpoints re-verified post-deploy (see table above).
+
+## Result-search UX + recent searches phase — completed and deployed
+
+**Objective**: make candidate-number search feel instant and add a "recent searches" convenience list, without touching data, rankings, PDF generation, or any public route contract. Scope also included re-confirming (not redoing) the prior performance phase's homepage/filter-options work.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `lib/recent-searches.ts` | **New.** Pure client-side localStorage helpers: `loadRecentSearches`, `saveRecentSearch`, `clearRecentSearches`. Stores only `{ candidateNumber, year }` — never a name, average, decision, or grade. |
+| `components/recent-searches.tsx` | **New.** Presentational chip list using the existing `.chip`/`.chip-row` CSS (same visual language as the series filter chips) — renders nothing when the list is empty. |
+| `components/home-experience.tsx` | Wires the recent-searches list into the number-search form; fixes the auto-search debounce's stale guard; adds an in-flight-request-key guard; extends the existing in-memory number-search cache to also carry the resolved year. |
+| `lib/i18n.ts` | Added `recentSearches` / `clearRecentSearches` — Arabic ("آخر عمليات البحث" / "مسح السجل") and French ("Recherches récentes" / "Effacer"), exact text as specified. |
+
+### Recent-search behavior
+
+- Chips render **above** the number-search button, inside the same "number" search-mode form; hidden entirely (`return null`) when the list is empty.
+- Stores at most 5 entries, newest first, deduplicated by **candidateNumber + year together** (not number alone) — a `2026/00042` and a `2025/00042` are two distinct entries, per the "scope by exam year" requirement.
+- An entry is written only after a **successful** open (candidate actually found) — not for a not-found search, and never on a network/service error.
+- Re-searching an already-listed number+year moves it back to first position instead of duplicating it.
+- Clicking a chip sets the year selector to that chip's year (`selectRecentSearch`), then calls the existing `openCandidate` with that year as an explicit override — so it searches the *chip's* year even if a different year is currently selected in the dropdown, then loads instantly if that number+year is still in the in-memory session cache, or via a fresh request otherwise.
+- Populated via `useEffect(() => setRecentSearches(loadRecentSearches()), [])` — i.e. **after mount only**. Server-rendered HTML and the client's first hydration pass both see an empty list (no `window`/`localStorage` on the server), so there is no hydration mismatch; the chips simply appear a moment after mount once localStorage has been read. This is the standard, warning-free way to surface client-only storage in a component that Next.js also renders on the server.
+
+### Privacy decisions
+
+- **Never stored**: candidate name, average, decision, series, wilaya, school, exam center, subject grades, or any other result field. `lib/recent-searches.ts`'s `RecentSearch` type is `{ candidateNumber: string; year: string }` and nothing else — there is no code path that could accidentally widen it, since the type itself is the only shape `saveRecentSearch` accepts.
+- **Never sent to the server or database**: this is a client-only `localStorage` feature; no new API route, no new database table/column. A "recent search" surviving a page reload is purely a property of the visitor's own browser.
+- Reading/writing localStorage is wrapped in `try/catch` (private browsing, storage quota, or disabled storage all degrade to "no recent searches" rather than throwing).
+
+### Caching behavior (three distinct layers — none of them new except the fix noted)
+
+1. **In-memory session cache** (`numberCache` in `home-experience.tsx`, pre-existing from the prior phase): keyed by `candidateNumber:year`, capped at 20 entries, cleared on tab close/reload — never persisted. Extended this phase to also store the *resolved* year returned by the API (so a cache-hit can still correctly re-file a recent-search entry with the right year). Still only ever returns a cached result when both the number and the year match exactly.
+2. **`unstable_cache`-backed server caches** (`getPublishedYearCached`, `getFilterOptionsCached`, `browseResultsCached` in `lib/results.ts`) — unchanged from the prior phase.
+3. **`localStorage` recent-searches list** (new, this phase) — number+year only, never result data, as above.
+- **In-flight request guard** (new, this phase): a ref tracks the `candidateNumber:year` key currently being fetched; a second trigger for the exact same key (e.g. the 400ms auto-search timer firing right as the visitor also presses Enter) is now a silent no-op instead of a second network request, closing a real gap the prior phase's abort-on-new-request logic didn't cover (it cancelled-and-restarted rather than recognizing "this is the same request already in flight").
+
+### Bug fixed: auto-search debounce ignored year changes
+
+The auto-search effect's guard was `if (candidate && candidate.candidateNumber === clean) return;` — it compared only the candidate number, not the year. Changing the year dropdown while the number field still held an already-displayed candidate's number silently blocked the debounce from ever re-searching, since the guard matched on number alone. Replaced with a `lastOpenedKey` ref storing the exact `number:year` key of the last *resolved* search (found or not-found); the guard now checks that composite key, so switching years for the same number correctly re-triggers a search, while a genuinely unchanged number+year still doesn't refetch on every keystroke-triggered re-render.
+
+### Item 4 (Top Candidates / homepage) — reviewed, not modified
+
+Re-read `app/page.tsx`, `lib/results.ts: getHomeInitialData`, and `components/rankings/rankings-section.tsx` end-to-end. Confirmed, without changing anything:
+- Top Candidates is server-rendered (`getHomeInitialData` resolves year + filter options + page 1 of rankings before the page HTML is sent).
+- No duplicate client fetch on mount: `RankingsSection`'s `isFirstOptionsRun`/`isFirstResultsRun` refs skip the first effect run when `initialData`/`initialOptions` already cover that exact (unfiltered, default-year) case.
+- `getFilterOptions` (`lib/results.ts`) uses real `SELECT DISTINCT` raw SQL, not Prisma's `distinct` option — the full-table-scan bug from the prior phase is gone and was not reintroduced.
+
+### Item 5 (large lists) — reviewed, already sufficient, not modified
+
+`components/rankings/roster-page.tsx` (used by `/schools/[school]` and `/centers/[center]`) already paginates via `PAGE_SIZE = 50` (`lib/constants.ts`) with an explicit "load more" (`loadMore`/`hasMore = page < pageCount`) rather than rendering an unbounded list. The homepage's own Top Candidates section intentionally shows only the first page with no "load more" (it's a showcase, not a full roster) — this is existing, correct behavior, left as-is. No virtualization was added; none of these lists render more than 50 rows at a time.
+
+### Tests and build results
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | Passed |
+| `npx eslint . --max-warnings=0` | Passed, zero warnings |
+| `npm test` | 203/203 passed (21 files) — unchanged from the prior phase, no test needed new/changed assertions since this phase added a client-only UI feature with no existing test coverage of `home-experience.tsx`'s internals |
+| `npm run build` | Passed (after releasing the Windows Prisma DLL lock held by a stale local dev server on port 3000 — same known issue documented in the README's "Windows Prisma EPERM repair" section; the dev server was restarted afterward) |
+| Local dev run | Homepage 200, contains the number-search form markup; `search-name` API 200 — confirmed no SSR/hydration crash from the new `RecentSearches` component (renders `null` server-side since the list is empty until after mount) |
+
+### Deployment
+
+Committed as `30ea37d` and pushed to `main` (git-linked Vercel auto-deploy, same workflow as prior phases). Deployment `dpl_BKr1S2LauTTRtRX86rzV2FZmMfjJ`, created **2026-07-31T13:05:57Z**, reached `Ready` in 59s, aliased to **https://mth-bac.vercel.app**. Live re-verification immediately after: homepage 200 with the number-search form present, `/api/public/search?number=00002&year=2025` 200, `/api/public/search-name?query=idy` 200, `/api/public/meta?series=M` 200 (consistent with the prior phase's already-fixed timing).
+
+### Remaining limitations
+
+1. No real mobile/desktop browser was used to eyeball the new recent-searches chips visually (RTL wrapping, touch target size) — same environment limitation noted in prior phases (no browser-automation tool here). Verified through code review (reuses the existing, already-mobile-verified `.chip`/`.chip-row` CSS used elsewhere on this page), the live HTML response, and the hydration-safety argument above.
+2. `home-experience.tsx` has no dedicated automated test file — this phase's changes were verified via typecheck/build/live HTTP checks, not new unit tests, since none existed for this component to extend before this phase either.
+3. The 11 subject codes with `nameFr: null` and the "real-browser spot-check" item from the prior two phases remain open, unrelated to this phase's scope.
+
+### Next recommended step (optional, not blocking)
+
+1. A real-browser/mobile spot-check of the recent-searches chips (RTL layout, tap target size, wrapping with 5 chips on a narrow screen).
+2. If this component grows further, consider adding a `home-experience.test.tsx` (none exists today) covering the auto-search/cache/recent-search interactions directly rather than only through typecheck+build+live checks.
 
 ## Remaining known limitations
 
