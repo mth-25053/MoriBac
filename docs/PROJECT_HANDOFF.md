@@ -2,7 +2,7 @@
 
 **READ THIS FILE FIRST, before doing anything, if you are a new Claude conversation picking up this project.** It is the current source of truth for what's done, what's in progress, and what must not be skipped. Do not re-derive this from memory or assumptions — verify against the live repo/database if anything here seems stale, and update this file as state changes.
 
-Last updated: 2026-07-31 (UTC), end of the **result-page improvements + PDF export** phase. Live in production at https://mth-bac.vercel.app.
+Last updated: 2026-07-31 (UTC), end of the **performance optimization** phase. Live in production at https://mth-bac.vercel.app.
 
 ---
 
@@ -25,6 +25,7 @@ Last updated: 2026-07-31 (UTC), end of the **result-page improvements + PDF expo
 9. **Production import of `bac2026_import_ready.json` — completed and verified** (details below). All 516,956 rows are now live in `CandidateSubjectGrade`.
 10. **Deployment and live end-to-end verification — completed** (details below). The application is live at https://mth-bac.vercel.app with all 7 series verified against the real production API.
 11. **Result-page improvements + PDF export — completed and deployed** (details below): subjects now display automatically (no click), a redesigned summary/ranking section shows real "X out of Y" ranks, and a new "Download PDF" button generates a real (non-screenshot) bilingual A4 PDF of the full result.
+12. **Performance optimization — completed and deployed** (details below): homepage Top Candidates now server-rendered (no blank-then-fetch wait), candidate-number search caches recent lookups and auto-searches, and a real production-database bug was found and fixed where the public filter-options query (series/wilaya/school/center dropdowns) was silently pulling the entire candidate table over the wire instead of letting Postgres deduplicate it — cut from 3-9s to ~0.3-0.7s per call.
 
 ---
 
@@ -291,6 +292,49 @@ Every PDF was verified by actually rendering it and visually inspecting a raster
 **Result: no validation error exists.** The full dataset — all 516,956 rows across all 64,532 candidates in all 7 series — matched cleanly against the now-seeded `SubjectScheme` and existing `Candidate` data, with zero rejections in every category the importer tracks.
 
 **"The dataset is ready for production import."**
+
+## Performance optimization phase — completed and deployed
+
+**Objective**: homepage felt slow before Top Candidates appeared; candidate-number search, name search, and filter/roster navigation all felt sluggish. Scope was strictly performance — no data, ranking, PDF, or UI-shape changes.
+
+### Root cause found (the dominant bottleneck)
+
+`getFilterOptions()` (`lib/results.ts`) built the series/wilaya/school/exam-center dropdown lists using Prisma's `findMany({ distinct: [...] })`. Measured directly against the live production database with query logging enabled, this **does not push the deduplication down to SQL**: Prisma issues a plain `SELECT id, <column> FROM "Candidate" WHERE "examYearId" = ... OFFSET 0` with no `DISTINCT` and no `LIMIT`, pulls every matching row (tens of thousands per exam year) over the wire, and deduplicates client-side. A ~15-row answer was costing a full-table read:
+
+| Query | Before (Prisma `distinct`) | After (raw `SELECT DISTINCT`) |
+|---|---|---|
+| `getFilterOptions` (unfiltered, 2 parallel reads) | 3.1s – 9.2s | 0.6s – 0.7s |
+| Same query, EXPLAIN ANALYZE at the SQL level | n/a (full scan, ~64k rows returned to Node) | 97-100ms, 15 rows returned |
+
+This function runs on **every** homepage load (via `getHomeInitialData`) and on every series/wilaya filter change in the rankings section (via `/api/public/meta`) — it was the single largest source of "navigation feels slow." Fixed by replacing all four `distinct` calls with parameterized `SELECT DISTINCT ... ORDER BY` queries via `database.$queryRaw(Prisma.sql...)`. Same inputs/outputs, `tests/results.test.ts` updated to assert the generated SQL/params instead of the old `where` shape. This was investigated and fixed in-repo, not by touching the database schema — no index/migration was needed, since a real `DISTINCT` query already used the existing indexes efficiently (confirmed via `EXPLAIN ANALYZE`).
+
+### Other changes in this phase
+
+| Area | Change |
+|---|---|
+| Homepage (`app/page.tsx`, `lib/results.ts: getHomeInitialData`) | Server-resolves the published year, filter options, and page 1 of unfiltered Top Candidates before the page HTML is sent. Verified live: the homepage response body already contains the rendered podium/rank rows, not an empty shell waiting on a client fetch. `HomeExperience`/`RankingsSection` accept this as `initialMeta`/`initialRankings` and skip their first redundant client-side re-fetch of the exact same data. |
+| Candidate-number search (`components/home-experience.tsx`) | Recent lookups cached client-side (`Map`, capped at 20 entries, keyed by `number:year`) so repeat searches and back/forward navigation resolve with no network round-trip. Auto-searches 400ms after the visitor stops typing a valid number, in addition to the existing Enter/click submit. Previous in-flight request is aborted before a new one starts (already existing `AbortController` pattern, unchanged). |
+| Name search | Already debounced (300ms), already cancels stale requests via `AbortController`, already selects only the fields the result list needs (`lib/results.ts: searchCandidatesByName`) — confirmed via query log this was not a bottleneck (single indexed-scoped `ILIKE`, ~100-140ms at the SQL level); left as-is. |
+| Rankings/browse queries (`lib/results.ts`) | The independent read pairs in `getCandidateRanks`, `browseResults`, and `getFilterOptions` (rank+total, candidates+count, decisionCounts+aggregate, distinct lookups) now run via `Promise.all` instead of sequential `await`, since none of them depend on each other's result and the pooled Prisma client already bounds real concurrent connections. |
+| Navigation (`components/rankings/{rankings-section,rankings-filters,filterable-list}.tsx`) | School/exam-center entries in the filter list now call `router.prefetch()` on hover/focus (in addition to `router.push()` on click), so the destination route's RSC payload is already warm by the time the visitor clicks. |
+| PDF generation | Confirmed already isolated to its own server route (`app/api/public/candidate-result-pdf/route.tsx`, Node runtime) — `@react-pdf/renderer` was never part of any client bundle, so no lazy-loading change was needed there. |
+
+### Verification performed
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | Passed |
+| `npx eslint . --max-warnings=0` | Passed, zero warnings |
+| `npm test` | 203/203 passed (21 files) |
+| `npm run build` | Passed |
+| Local dev run against the live production database | Homepage HTML confirmed to already contain rendered Top Candidates markup (podium + rank rows) on first response; `/api/public/meta?series=M` (the previously-expensive filtered path) returned in well under 1s |
+| Live production spot-check post-deploy (`https://mth-bac.vercel.app`) | Homepage 200, Top Candidates present in the raw HTML; `/api/public/meta?series=M` warm ≈ 0.35s; `/api/public/search-name?query=idy` warm ≈ 0.3s; `/api/public/search?number=00002&year=2025` warm ≈ 0.3s (first/cold hits were higher, consistent with Vercel serverless cold start + `unstable_cache` needing to populate) |
+
+**Honest limitation**: timings above were measured from this development machine over the general internet to the Supabase database (`eu-north-1`), not from inside Vercel's network — absolute milliseconds will differ in Vercel's own region-to-region latency. The relative improvement (full-table read → real `DISTINCT`, ~5-9x fewer bytes/round-trips for the same answer) is architecture-level and holds regardless of where it's measured from. No real mobile/desktop browser was used to eyeball perceived responsiveness (same tooling limitation noted in the prior phase); the auto-search debounce, prefetch-on-hover, and server-rendered Top Candidates were verified through code, tests, and direct HTTP/HTML inspection of both local-against-prod-DB and the live deployment.
+
+### Deployment
+
+Committed as `a862276` and pushed to `main` (git-linked Vercel auto-deploy). Deployment reached `Ready` and was aliased to **https://mth-bac.vercel.app**; live endpoints re-verified post-deploy (see table above).
 
 ## Remaining known limitations
 
