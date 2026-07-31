@@ -1,4 +1,4 @@
-import { Award, Building2, Globe2, Hash, MapPin, School, type LucideIcon } from "lucide-react";
+import { Award, Building2, Hash, MapPin, School, type LucideIcon } from "lucide-react";
 import { classifyDecision } from "@/lib/decision";
 import type { Dictionary, Locale } from "@/lib/i18n";
 import { formatAverage } from "@/lib/format";
@@ -57,7 +57,7 @@ export function ResultCard({ candidate, dict, locale, year }: { candidate: Candi
   const badges = computeBadges(dict, candidate.ranks);
   const ranks = candidate.ranks;
   const showRankings = Boolean(
-    ranks && ((ranks.national !== null && ranks.nationalTotal !== null) || (ranks.school !== null && ranks.schoolTotal !== null) || (ranks.examCenter !== null && ranks.examCenterTotal !== null))
+    ranks && ((ranks.series !== null && ranks.seriesTotal !== null) || (ranks.school !== null && ranks.schoolTotal !== null))
   );
 
   return <article className={`reveal surface relative overflow-hidden${celebrating ? " glow" : ""}`} aria-labelledby="candidate-name">
@@ -70,41 +70,44 @@ export function ResultCard({ candidate, dict, locale, year }: { candidate: Candi
       <h3 id="candidate-name" className="mt-3 text-2xl font-black sm:text-3xl">{candidate.fullName}</h3>
       <p className="muted flex items-center gap-2 text-sm"><Hash size={15} />{dict.candidateNumber}: <bdi className="font-bold text-[var(--text)]">{candidate.candidateNumber}</bdi></p>
 
-      <div className="mt-6 text-6xl font-black tabular-nums leading-none text-[var(--accent)] sm:text-7xl" dir="ltr">{formatAverage(candidate.average)}</div>
+      <span className={`badge mt-6 text-base ${badgeTone}`}><bdi>{decisionLabel}</bdi></span>
+      <div className="mt-3 text-6xl font-black tabular-nums leading-none text-[var(--accent)] sm:text-7xl" dir="ltr">{formatAverage(candidate.average)}</div>
 
-      <span className={`badge mt-5 text-base ${badgeTone}`}><bdi>{decisionLabel}</bdi></span>
-      {celebrating && <p className="mt-3 text-lg font-black" style={{ color: "var(--celebrate)" }}>{dict.congratulations}</p>}
-
-      <div className="mt-6 flex flex-wrap justify-center gap-2">
-        <ShareButton
-          dict={dict}
-          locale={locale}
-          fullName={candidate.fullName}
-          candidateNumber={candidate.candidateNumber}
-          series={candidate.series}
-          wilaya={candidate.wilaya}
-          average={candidate.average}
-          decisionLabel={decisionLabel}
-          year={year}
-          badgeLabel={badges[0]?.label}
-        />
-        <DownloadResultPdfButton dict={dict} locale={locale} candidateNumber={candidate.candidateNumber} year={year} />
-      </div>
+      {known === "ADMIS" && <div className="mt-4">
+        <p className="text-lg font-black" style={{ color: "var(--celebrate)" }}>{dict.resultPassTitle}</p>
+        <p className="muted mt-1 text-sm">{dict.resultPassSubtitle}</p>
+      </div>}
+      {known === "REDOUBLE" && <p className="muted mt-4 text-sm font-bold">{dict.resultFailMessage}</p>}
     </div>
 
-    <dl className="relative z-[2] grid gap-px bg-[var(--line)] sm:grid-cols-2 lg:grid-cols-4">
+    <dl className="relative z-[2] grid grid-cols-2 gap-px bg-[var(--line)] lg:grid-cols-4">
       {details.map(([Icon, label, value]) => <div key={label} className="bg-[var(--surface)] p-5"><dt className="muted flex items-center gap-2 text-xs font-bold"><Icon size={15} />{label}</dt><dd className="mt-2 font-bold">{value || "—"}</dd></div>)}
     </dl>
 
     {showRankings && ranks && <div className="relative z-[2] border-t" style={{ borderColor: "var(--line)" }}>
       <p className="px-5 pt-5 text-sm font-black">{dict.rankingsResultsTitle}</p>
-      <dl className="grid gap-px bg-[var(--line)] sm:grid-cols-3">
-        <RankTile icon={Globe2} label={dict.rankNationalLabel} rank={ranks.national} total={ranks.nationalTotal} dict={dict} />
+      <dl className="grid gap-px bg-[var(--line)] sm:grid-cols-2">
+        <RankTile icon={Award} label={dict.rankLabel} rank={ranks.series} total={ranks.seriesTotal} dict={dict} />
         <RankTile icon={School} label={dict.rankSchoolLabel} rank={ranks.school} total={ranks.schoolTotal} dict={dict} />
-        <RankTile icon={Building2} label={dict.rankCenterLabel} rank={ranks.examCenter} total={ranks.examCenterTotal} dict={dict} />
       </dl>
     </div>}
 
     <SubjectGradesSection candidateNumber={candidate.candidateNumber} year={year} dict={dict} locale={locale} />
+
+    <div className="relative z-[2] flex flex-wrap justify-center gap-2 border-t p-5" style={{ borderColor: "var(--line)" }}>
+      <ShareButton
+        dict={dict}
+        locale={locale}
+        fullName={candidate.fullName}
+        candidateNumber={candidate.candidateNumber}
+        series={candidate.series}
+        wilaya={candidate.wilaya}
+        average={candidate.average}
+        decisionLabel={decisionLabel}
+        year={year}
+        badgeLabel={badges[0]?.label}
+      />
+      <DownloadResultPdfButton dict={dict} locale={locale} candidateNumber={candidate.candidateNumber} year={year} />
+    </div>
   </article>;
 }

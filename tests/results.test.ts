@@ -132,17 +132,17 @@ describe("multi-scope candidate ranks", () => {
   it("returns every scope as null for an ANNULE candidate without querying the database", async () => {
     const count = vi.fn();
     const ranks = await getCandidateRanks("year", { ...base, decision: "ANNULE" }, { candidate: { count } } as never);
-    expect(ranks).toEqual({ series: null, wilaya: null, school: null, examCenter: null, national: null, nationalTotal: null, schoolTotal: null, examCenterTotal: null });
+    expect(ranks).toEqual({ series: null, wilaya: null, school: null, examCenter: null, national: null, nationalTotal: null, schoolTotal: null, examCenterTotal: null, seriesTotal: null });
     expect(count).not.toHaveBeenCalled();
   });
 
   it("computes a 1-based rank per scope, excluding ANNULE from the count in each, plus a real total per scope for 'X out of Y'", async () => {
     const count = vi.fn()
       .mockResolvedValueOnce(4).mockResolvedValueOnce(0).mockResolvedValueOnce(9).mockResolvedValueOnce(2).mockResolvedValueOnce(120)
-      .mockResolvedValueOnce(30).mockResolvedValueOnce(15).mockResolvedValueOnce(500);
+      .mockResolvedValueOnce(30).mockResolvedValueOnce(15).mockResolvedValueOnce(500).mockResolvedValueOnce(20);
     const database = { candidate: { count } };
     const ranks = await getCandidateRanks("year", base, database as never);
-    expect(ranks).toEqual({ series: 5, wilaya: 1, school: 10, examCenter: 3, national: 121, nationalTotal: 500, schoolTotal: 30, examCenterTotal: 15 });
+    expect(ranks).toEqual({ series: 5, wilaya: 1, school: 10, examCenter: 3, national: 121, nationalTotal: 500, schoolTotal: 30, examCenterTotal: 15, seriesTotal: 20 });
 
     const rankCalls = count.mock.calls.slice(0, 5);
     for (const call of rankCalls) expect(call[0].where).toMatchObject({ examYearId: "year", decision: { not: "ANNULE" }, average: { gt: 14 } });
@@ -158,14 +158,15 @@ describe("multi-scope candidate ranks", () => {
     }
     expect(totalCalls[0][0].where).toMatchObject({ school: "École Rosso" });
     expect(totalCalls[1][0].where).toMatchObject({ examCenter: "Centre Rosso" });
+    expect(totalCalls[3][0].where).toMatchObject({ series: "M" });
   });
 
   it("reports null instead of a guessed rank or total for scopes with no recorded value", async () => {
     const count = vi.fn().mockResolvedValue(0);
     const database = { candidate: { count } };
     const ranks = await getCandidateRanks("year", { ...base, wilaya: null, school: null, examCenter: null }, database as never);
-    expect(ranks).toEqual({ series: 1, wilaya: null, school: null, examCenter: null, national: 1, nationalTotal: 0, schoolTotal: null, examCenterTotal: null });
-    expect(count).toHaveBeenCalledTimes(3);
+    expect(ranks).toEqual({ series: 1, wilaya: null, school: null, examCenter: null, national: 1, nationalTotal: 0, schoolTotal: null, examCenterTotal: null, seriesTotal: 0 });
+    expect(count).toHaveBeenCalledTimes(4);
   });
 });
 

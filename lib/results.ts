@@ -38,7 +38,7 @@ export async function findCandidateResult(examYearId: string, candidateNumber: s
 export type CandidateRanks = {
   series: number | null; wilaya: number | null; school: number | null; examCenter: number | null; national: number | null;
   /** Total candidates in each scope (the "Y" in "rank X of Y") - null exactly when the corresponding rank is null. */
-  nationalTotal: number | null; schoolTotal: number | null; examCenterTotal: number | null;
+  nationalTotal: number | null; schoolTotal: number | null; examCenterTotal: number | null; seriesTotal: number | null;
 };
 
 /**
@@ -61,7 +61,7 @@ export async function getCandidateRanks(
   database = db
 ): Promise<CandidateRanks> {
   if (candidate.decision === "ANNULE") {
-    return { series: null, wilaya: null, school: null, examCenter: null, national: null, nationalTotal: null, schoolTotal: null, examCenterTotal: null };
+    return { series: null, wilaya: null, school: null, examCenter: null, national: null, nationalTotal: null, schoolTotal: null, examCenterTotal: null, seriesTotal: null };
   }
   return withDatabaseRetry(async () => {
     const ahead = (scope: Prisma.CandidateWhereInput) => database.candidate.count({
@@ -69,7 +69,7 @@ export async function getCandidateRanks(
     });
     const total = (scope: Prisma.CandidateWhereInput) => database.candidate.count({ where: { ...scope, examYearId, decision: { not: "ANNULE" } } });
 
-    const [series, wilaya, school, examCenter, national, schoolTotal, examCenterTotal, nationalTotal] = await Promise.all([
+    const [series, wilaya, school, examCenter, national, schoolTotal, examCenterTotal, nationalTotal, seriesTotal] = await Promise.all([
       ahead({ series: candidate.series }),
       candidate.wilaya ? ahead({ wilaya: candidate.wilaya }) : Promise.resolve(null),
       candidate.school ? ahead({ school: candidate.school }) : Promise.resolve(null),
@@ -77,7 +77,8 @@ export async function getCandidateRanks(
       ahead({}),
       candidate.school ? total({ school: candidate.school }) : Promise.resolve(null),
       candidate.examCenter ? total({ examCenter: candidate.examCenter }) : Promise.resolve(null),
-      total({})
+      total({}),
+      total({ series: candidate.series })
     ]);
 
     return {
@@ -88,7 +89,8 @@ export async function getCandidateRanks(
       national: national + 1,
       nationalTotal,
       schoolTotal,
-      examCenterTotal
+      examCenterTotal,
+      seriesTotal
     };
   }, "candidate-ranks-read", { timeoutMs: 20_000 });
 }
