@@ -238,7 +238,9 @@ Every value returned by the live production API — subject codes, order, coeffi
 
 ### Deployment
 
-Committed and pushed to `main` (git-linked Vercel auto-deploy, same workflow as the prior phase). See the top of this document for the live URL; this section will be updated with the exact commit/deployment identifiers once pushed.
+Committed as `dac05d3` and pushed to `main` (git-linked Vercel auto-deploy, same workflow as the prior phase). Deployment `dpl_6BrAk1dbSpbUN5mZFEKuFWmUxxU4` (target: production), created `2026-07-31T03:47:33Z`, build duration 59s, status `Ready`, aliased to **https://mth-bac.vercel.app** (also `mori-bac.vercel.app`).
+
+**Live verification performed against this exact deployment** (not staging, not local): `/api/public/search` confirmed the new `ranks` object carries `nationalTotal`/`schoolTotal`/`examCenterTotal` (e.g. candidate 15049: national 5272/64333, institution 2/23, center 11/355 — matching the local pre-deploy values exactly). Both the SN (plain, Arabic) and TS (EXEMPT + French-fallback-to-Arabic subject names) PDFs were re-downloaded from the live endpoint and re-rasterized/visually inspected — pixel-identical to the pre-deploy verified output: correct "ناجح" decision label, correct rank ordering, correct EXEMPT/"Dispensé" handling, correct mixed-font fallback rendering.
 
 ### Honest limitation on this phase's verification
 
@@ -290,20 +292,19 @@ Every PDF was verified by actually rendering it and visually inspecting a raster
 
 **"The dataset is ready for production import."**
 
-## Remaining known limitation
+## Remaining known limitations
 
-**11 of the 21 BAC subject codes still have `nameFr: null`** (not guessed, per the operator's explicit instruction): `AF, AT, CH, CM, DM, DS, EL, ME, PH, PI, TA`. Their `nameAr` is confirmed (read directly off the official screenshots), and every coefficient/order/mapping for them is confirmed — only the French display label is missing. The public subject-grades UI (`components/subject-grades-section.tsx`) falls back to the Arabic name (or the raw code, per `subjectDisplayName()` in `lib/grades/subject-grades-client.ts`) when `nameFr` is null, so this does not block display — a French-locale user will just see the Arabic name or code for these 11 subjects until the French names are confirmed and the seed script (`prisma/seed-subject-schemes-2026.ts`) is updated and re-run (it's an idempotent upsert, safe to re-run).
+1. **11 of the 21 BAC subject codes still have `nameFr: null`** (not guessed, per the operator's explicit instruction): `AF, AT, CH, CM, DM, DS, EL, ME, PH, PI, TA`. Their `nameAr` is confirmed (read directly off the official screenshots), and every coefficient/order/mapping for them is confirmed — only the French display label is missing. Both the web UI and the PDF fall back to the Arabic name (`subjectDisplayName()` in `lib/grades/subject-grades-client.ts`) when `nameFr` is null — verified rendering *correctly* in both places (the PDF specifically needed a per-cell font override, see above, since the fallback text is Arabic script even inside a French document). Not a blocker; resolve when an authoritative French source is available, then re-run `prisma/seed-subject-schemes-2026.ts` (idempotent) and redeploy.
+2. **No real mobile/desktop browser was used to verify the result-page UI changes** (auto-shown subjects, new ranking section layout, PDF button placement) — this environment has no browser-automation tool. The underlying logic is verified (tests, live API/PDF data), but an actual visual/device check has not been done. The PDF output, by contrast, *was* verified visually (rendered and rasterized for direct inspection) — that's a stronger form of proof than the web-UI claims above.
 
 ## Current final project status
 
-**Live and verified.** The BAC subject-grades feature, including the full BAC 2026 dataset (516,956 rows / 64,532 candidates), is deployed to production at **https://mth-bac.vercel.app** and confirmed correct via direct calls to the live API for one candidate per series (SN, M, LM, LO, TM, TS, LA). No known data or backend defects remain.
+**Live and verified.** The BAC subject-grades feature (full 2026 dataset), the redesigned result summary/ranking section with real "X out of Y" values, automatic (no-click) subject display, and the bilingual PDF export are all deployed to production at **https://mth-bac.vercel.app** (deployment `dpl_6BrAk1dbSpbUN5mZFEKuFWmUxxU4`). No known data, backend, or PDF-rendering defects remain — every one found during this phase (variable-font glyph corruption, an Amiri ligature bug, emoji-in-PDF, mixed-script fallback font, bidi number reordering, footer/pagination overlap) was fixed and re-verified by rendering and visually inspecting the actual output, not assumed fixed.
 
 ## Next recommended step (optional, not blocking)
 
-Two things worth doing when convenient, neither urgent:
-
-1. **A real-browser spot-check** of one or two of the 7 candidates above (ideally on an actual mobile device/viewport), since this session could only verify the underlying data via direct API calls, not actual rendered UI/console/mobile layout (see the "Honest limitation" note above).
-2. **Resolve the 11 remaining French subject names** (see "Remaining known limitation" below) if/when an authoritative French-language source becomes available, then re-run `prisma/seed-subject-schemes-2026.ts` (idempotent) and redeploy.
+1. **A real-browser spot-check** of the result page (ideally on an actual mobile device), covering what this session could not: rendered CSS layout, browser console errors, and the PDF button's real download behavior in a live browser (the PDF *content* itself is already verified correct).
+2. **Resolve the 11 remaining French subject names** (above) if/when an authoritative French-language source becomes available, then re-run the seed script and redeploy.
 
 ---
 
