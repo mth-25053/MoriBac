@@ -131,24 +131,24 @@ Or set the seed variables, run `npm run db:seed` once, then remove the seed pass
 
 The official file must remain outside Git/deployment artifacts.
 
-## Verify candidate 00002
+## Verify a known candidate
 
-After import and publication:
+After import and publication, query any candidate number present in the imported workbook:
 
 ```powershell
-Invoke-RestMethod 'http://localhost:3000/api/public/search?number=00002&year=2025'
+Invoke-RestMethod 'http://localhost:3000/api/public/search?number=<candidate-number>&year=2025'
 ```
 
-Expected fields include:
+Illustrative response shape (fictional example, not a real candidate):
 
-- `candidateNumber`: `00002`
-- `fullName`: `[REDACTED CANDIDATE NAME]`
+- `candidateNumber`: `00042`
+- `fullName`: `Example Candidate Name`
 - `series`: `M`
 - `average`: `8.47`
 - `decision`: `SESSIONNAIRE`
 - `wilaya`: `Trarza`
-- `examCenter`: `Lycée Rosso`
-- `school`: `Rosso Candidat Libre`
+- `examCenter`: `Example Exam Center`
+- `school`: `Example School`
 
 The response must not contain birth date or birth place.
 

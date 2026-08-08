@@ -22,7 +22,9 @@ type YearFixture = {
   year: number;
   count: number;
   rankableCount: number;
-  candidate: Pick<Candidate, "candidateNumber" | "fullName" | "series" | "average" | "decision">;
+  // fullName is intentionally not stored here (and not compared below) so no real candidate's
+  // name is embedded in tracked source; every other field is still verified against live production data.
+  candidate: Pick<Candidate, "candidateNumber" | "series" | "average" | "decision">;
   cancelledCandidateNumber?: string;
   center: string;
   schoolCenter: string;
@@ -30,9 +32,9 @@ type YearFixture = {
 };
 
 const fixtures: YearFixture[] = [
-  { year: 2021, count: 46_587, rankableCount: 45_820, candidate: { candidateNumber: "00001", fullName: "[REDACTED CANDIDATE NAME]", series: "SN", average: 2.84, decision: "REDOUBLE" }, cancelledCandidateNumber: "00009", center: "Lycée Kaedi 1", schoolCenter: "Lycée Aioun", school: "Lycée Aioun" },
-  { year: 2024, count: 47_217, rankableCount: 47_217, candidate: { candidateNumber: "00002", fullName: "[REDACTED CANDIDATE NAME]", series: "LM", average: 4.8, decision: "REDOUBLE" }, center: "Lycée El Argoub Tidjikja", schoolCenter: "Lycée El Argoub Tidjikja", school: "Tidjikja" },
-  { year: 2025, count: 53_148, rankableCount: 52_813, candidate: { candidateNumber: "00002", fullName: "[REDACTED CANDIDATE NAME]", series: "M", average: 8.47, decision: "SESSIONNAIRE" }, cancelledCandidateNumber: "00072", center: "Lycée Rosso", schoolCenter: "Lycée Rosso", school: "Rosso Candidat Libre" }
+  { year: 2021, count: 46_587, rankableCount: 45_820, candidate: { candidateNumber: "00001", series: "SN", average: 2.84, decision: "REDOUBLE" }, cancelledCandidateNumber: "00009", center: "Lycée Kaedi 1", schoolCenter: "Lycée Aioun", school: "Lycée Aioun" },
+  { year: 2024, count: 47_217, rankableCount: 47_217, candidate: { candidateNumber: "00002", series: "LM", average: 4.8, decision: "REDOUBLE" }, center: "Lycée El Argoub Tidjikja", schoolCenter: "Lycée El Argoub Tidjikja", school: "Tidjikja" },
+  { year: 2025, count: 53_148, rankableCount: 52_813, candidate: { candidateNumber: "00002", series: "M", average: 8.47, decision: "SESSIONNAIRE" }, cancelledCandidateNumber: "00072", center: "Lycée Rosso", schoolCenter: "Lycée Rosso", school: "Rosso Candidat Libre" }
 ];
 
 const base = (process.argv[2] || "http://localhost:3000").replace(/\/$/, "");
@@ -81,7 +83,8 @@ async function main() {
     const candidate = search.candidate;
     assert(candidate && search.year === fixture.year, `BAC ${fixture.year} candidate was not returned`);
     assert(candidate.candidateNumber === fixture.candidate.candidateNumber, `BAC ${fixture.year} leading zeros were lost`);
-    assert(candidate.fullName === fixture.candidate.fullName && candidate.series === fixture.candidate.series && candidate.decision === fixture.candidate.decision, `BAC ${fixture.year} candidate data mismatch`);
+    assert(typeof candidate.fullName === "string" && candidate.fullName.length > 0, `BAC ${fixture.year} candidate is missing a full name`);
+    assert(candidate.series === fixture.candidate.series && candidate.decision === fixture.candidate.decision, `BAC ${fixture.year} candidate data mismatch`);
     assert(Math.abs(candidate.average - fixture.candidate.average) < 0.001, `BAC ${fixture.year} candidate average mismatch`);
     assert(!("birthDate" in candidate) && !("birthPlace" in candidate), `BAC ${fixture.year} public API leaked birth data`);
 

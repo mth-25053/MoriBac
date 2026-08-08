@@ -552,6 +552,22 @@ Completed the remaining items from the audit above (production behavior untouche
 
 ---
 
+## Residual-PII cleanup — 2026-08-08 (follow-up)
+
+Redacted the three files flagged in the prior phase: `tests/excel.test.ts` (the real-workbook test now checks `fullName` structurally — non-empty string containing an apostrophe, still exercising the same encoding edge case — instead of asserting the literal real name; every other official field is still checked exactly against the real, untracked `BAC2025.xlsx`), `scripts/verify-live-api.ts` (dropped `fullName` entirely from its three year-fixtures — 2021/2024/2025 each previously carried a different real candidate's name — and replays the same non-empty-string check against live production; every count/ranking/pagination/cancellation assertion this ops script performs against real deployed data is unchanged), and `IMPLEMENTATION_STATUS.md` (same generic fictional-example rewrite already applied to `README.md`).
+
+A broader sweep (grepping the full tracked tree for all six real names now known, plus a generic `fullName: "..."`-shaped scan across `scripts/`) found no further occurrences.
+
+**Important caveat on Git history**: the current tree (`HEAD`) is now clean of all six known real candidate names. The **reachable history is not** — these names were introduced in the very first commit (`f063201`, which added `README.md`/`BAC2025_ANALYSIS.md`/`IMPLEMENTATION_STATUS.md`/`tests/`) and touched again in two later commits (`3a5323e`, `b8ae874`) before this cleanup. Redacting a file in a new commit does not remove the old value from history — it remains readable via `git log -p`/`git show <old-commit>` and, once pushed, via GitHub's own history browser, for as long as the repository's history is public. This is real personal data (names tied to real academic results), not a credential — no rotation applies — but it is a genuine residual exposure if the goal is that this data never appear in the public repo at all, including history. Resolving it requires an explicit decision: rewrite/squash history (e.g. `git filter-repo`) before making the repository public, or accept it as a known, low-severity residual (the same data is independently, individually retrievable by anyone through the app's own public search feature — this only concerns the *bulk, at-a-glance* visibility of a handful of names inside old diffs). Not resolved in this phase — flagged for the operator's decision before the public-release approval.
+
+**Verification performed** (all passed): current-tree secret scan — same three expected safe matches as the prior phase (`.env.example`, `lib/database-retry.ts`, this handoff doc's own prose); reachable Git-history secret-pattern scan — still only the two pre-existing cleared commits plus this phase's own commit (prose only, no real secret); the six-name PII scan — clean on current tree, present only in pre-cleanup history commits as described above; `npm run typecheck` ✅; `npx eslint . --max-warnings=0` ✅ zero warnings; `npm test` ✅ 203/203 (21 files, including the modified real-workbook test); `npm run build` ✅ full route manifest; `npm audit --omit=dev` — unchanged from the prior phase, 4 findings (`brace-expansion`, `nanoid`, `postcss` nested under Next.js's own vendored copy — none newly introduced, none Next.js-direct).
+
+**Git**: committed and pushed to `origin/main` on the existing **private** repository. Repository visibility was not changed.
+
+**Next approved phase**: operator decision on the Git-history PII caveat above, then a final confirmation audit, then explicit approval to flip the repository to public.
+
+---
+
 ## Standing rules for whoever continues this work
 
 - Never guess or invent academic data (subject names, coefficients, display order, any official BAC rule). If something can't be confirmed from an authoritative source, stop and ask.

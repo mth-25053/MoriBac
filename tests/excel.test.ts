@@ -225,9 +225,11 @@ describe("schema-independent Excel validation", () => {
     expect(report.validRows).toBe(53_148);
     expect(report.invalidRows).toBe(0);
     expect(report.rows.filter((row) => row.decision === "ANNULE")).toHaveLength(335);
-    expect(report.rows.find((row) => row.candidateNumber === "00002")).toMatchObject({
+    const candidate00002 = report.rows.find((row) => row.candidateNumber === "00002");
+    // fullName is checked structurally (not against a literal value) to avoid embedding a real candidate's name in tracked source.
+    expect(candidate00002?.fullName).toEqual(expect.stringContaining("'"));
+    expect(candidate00002).toMatchObject({
       candidateNumber: "00002",
-      fullName: "[REDACTED CANDIDATE NAME]",
       series: "M",
       average: 8.47,
       decision: "SESSIONNAIRE",
