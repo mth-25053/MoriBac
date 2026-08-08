@@ -568,6 +568,16 @@ A broader sweep (grepping the full tracked tree for all six real names now known
 
 ---
 
+## Git history rewrite and public release — 2026-08-08
+
+The operator chose to rewrite history rather than accept the residual-PII caveat above. `git filter-repo --replace-text` was run (against a fresh clone, never the live working directory) to replace all seven real candidate names found across the repo's history with a redaction marker, in every historical commit that contained them — not just `HEAD`. A full mirror backup of the pre-rewrite history was made first, kept locally outside the repository. The rewritten history was rescanned end-to-end (secrets, the seven names, dataset/backup/env filenames) and came back clean; current-tree content was confirmed byte-for-byte identical before and after (only historical commit content changed); typecheck/lint/tests/build were re-verified green; the rewritten history was force-pushed with `--force-with-lease`, and a fresh, independent clone directly from GitHub confirmed the old pre-rewrite commits are no longer reachable and only the sanitized history remains, on a single `main` branch with no other branches or tags.
+
+After one final remote-only re-verification (visibility, `main`'s SHA, branch/tag list, and a repeat secret/PII scan, all confirmed clean and unchanged since the rewrite), the GitHub repository **`mth-25053/MoriBac`** was switched from private to **public**, and independently reconfirmed via the unauthenticated GitHub API (`private: false`, single branch `main`, no tags, public `HEAD` = the sanitized commit). No application code, database data, Supabase configuration, Vercel configuration, or environment variables were touched in this phase.
+
+**This concludes the GitHub public-release security cleanup.** The repository is now public. Any further changes (code, data, or configuration) should be treated as normal ongoing development against a now-public repository — in particular, double-check before ever committing real candidate data, credentials, or `.env*` files, since the safety net of "it's still private" no longer applies.
+
+---
+
 ## Standing rules for whoever continues this work
 
 - Never guess or invent academic data (subject names, coefficients, display order, any official BAC rule). If something can't be confirmed from an authoritative source, stop and ask.
