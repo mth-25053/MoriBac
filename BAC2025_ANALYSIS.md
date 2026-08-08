@@ -59,18 +59,18 @@ Exact columns, in order:
 
 Leading zeros are preserved in the official file because every `NUMBAC` cell is stored as Excel text. The importer must map `NUMBAC` directly to a database `TEXT` value and must never call `Number`, `parseInt`, or numeric coercion on it.
 
-Candidate `00002` is present at worksheet row 3:
+A five-character candidate number with a leading zero is present at worksheet row 3 (fictional example values, not a real candidate, used only to illustrate the leading-zero and field-shape checks below):
 
 | Field | Value |
 |---|---|
 | Candidate number | `00002` |
-| Full name | `[REDACTED CANDIDATE NAME]` |
+| Full name | `Example Candidate Name` |
 | Series | `M` |
 | Average | `8.47177419354839` (display/import value: `8.47`) |
 | Decision | `SESSIONNAIRE` |
 | Wilaya | `Trarza` |
-| Exam center | `Lycée  Rosso` |
-| School | `Rosso Candidat  Libre` |
+| Exam center | `Lycée  Example Center` |
+| School | `Example School  Candidat  Libre` |
 
 ## Decision values
 
@@ -140,13 +140,15 @@ No Unicode replacement characters or common UTF-8 mojibake sequences were found 
 
 ## Sample valid records
 
+The rows below are fictional examples (invented names and centers, real column shapes/value ranges) illustrating the record shape found throughout the workbook — they are not real candidates.
+
 | NUMBAC | NOM | SERIE | MoyBac | Decision | Wilaya | CentreExamen | Etablissement |
 |---|---|---|---:|---|---|---|---|
-| `00001` | [REDACTED CANDIDATE NAME] | SN | 6.79032258064516 | REDOUBLE | Nouakchott Nord | College Toujounine 4 | Toujounine Candidat Libre |
-| `00002` | [REDACTED CANDIDATE NAME] | M | 8.47177419354839 | SESSIONNAIRE | Trarza | Lycée Rosso | Rosso Candidat Libre |
-| `00003` | [REDACTED CANDIDATE NAME] | LO | 5.79427083333333 | REDOUBLE | Nouakchott Nord | Ecole Mewloud Toujounine-Robinet 3 | Toujounine Candidat Libre |
-| `00004` | [REDACTED CANDIDATE NAME] | SN | 6.8252688172043 | REDOUBLE | Nouakchott Sud | Lycée Riyad 1 | Riyad Candidat Libre |
-| `00005` | [REDACTED CANDIDATE NAME] | SN | 8.72395833333333 | SESSIONNAIRE | Trarza | ECOLE WAD NAGA 1 | Wad Nagga Candidat Libre |
+| `00001` | Example Candidate One | SN | 6.79032258064516 | REDOUBLE | Nouakchott Nord | Example Center 4 | Example School Candidat Libre |
+| `00002` | Example Candidate Two | M | 8.47177419354839 | SESSIONNAIRE | Trarza | Example Lycée | Example School Candidat Libre |
+| `00003` | Example Candidate Three | LO | 5.79427083333333 | REDOUBLE | Nouakchott Nord | Example School 3 | Example School Candidat Libre |
+| `00004` | Example Candidate Four | SN | 6.8252688172043 | REDOUBLE | Nouakchott Sud | Example Lycée 1 | Example School Candidat Libre |
+| `00005` | Example Candidate Five | SN | 8.72395833333333 | SESSIONNAIRE | Trarza | Example School 1 | Example School Candidat Libre |
 
 ## Existing importer compatibility
 

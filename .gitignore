@@ -40,3 +40,8 @@ Thumbs.db
 VERCEL_ENVIRONMENT.md
 .vercel
 .env*
+
+# Local AI-assistant tooling (not application code)
+.claude/
+.agents/
+skills-lock.json

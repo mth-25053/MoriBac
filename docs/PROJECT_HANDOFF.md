@@ -483,6 +483,75 @@ Committed as `08f9b55` and pushed to `main` (git-linked Vercel auto-deploy, same
 
 ---
 
+## GitHub Public-Repository Security Audit
+
+**Audit date**: 2026-08-06 (UTC). **Type**: read-only security review (no commits, pushes, visibility changes, deletions, rotations, or deploys performed). **Scope**: current tracked working tree, entire reachable Git history (29 commits, `f063201`..`b539ff7`), `.gitignore` correctness, admin/auth/CSRF/rate-limit/session code, public API PII exposure, `$queryRaw` injection surface, file-upload handling, `npm audit`, repo hygiene (LICENSE/SECURITY.md), and documentation for embedded PII or credentials.
+
+**Verdict: NOT SAFE YET** — safe only after the fixes below are applied. No secret or PII was ever found tracked in Git or in the reachable Git history itself; the blocking issues are (a) real production credentials sitting in an untracked file on disk that must be rotated regardless of Git status, and (b) a few tracked-file/dependency/hygiene items.
+
+**Redacted findings summary**:
+- **CRITICAL**: an untracked, gitignored file at the repo root (`VERCEL_ENVIRONMENT.md`) contains the real production `DATABASE_URL`/`DIRECT_URL` (Supabase pooler credentials) and `AUTH_SECRET` in plaintext. Never committed, not in Git history — but it is a live credential on disk and must be rotated as a precaution, then the file deleted or moved outside the repo. Full detail (redacted) given to the operator directly, not repeated here.
+- **HIGH**: production dependency `next` is on `16.2.10`, which has several HIGH-severity advisories (middleware/proxy auth bypass, SSRF in Server Actions and rewrites, DoS) fixed in `16.3.0`. `npm audit` confirms a non-major fix is available.
+- **MEDIUM**: `BAC2025_ANALYSIS.md` and `README.md` embed a handful of real candidates' full names plus their results (same fields the public app already serves via search, but pasted as static repo content) — recommend anonymizing before publishing. `.claude/`, `.agents/`, and `skills-lock.json` are untracked but not covered by the repo's own `.gitignore` (only one file is, via the operator's personal global gitignore) — a future `git add -A` could commit them. CSP allows `'unsafe-inline'` for script/style. Public candidate-number search is fully enumerable (5-digit numeric, in-memory per-instance rate limit) — pre-existing product design, but worth hardening once the exact logic is public. No root `LICENSE` or `SECURITY.md`.
+- **LOW / PASS**: `.env`, `.env.local`, `.env.production` and all `*.xlsx` datasets are correctly gitignored and were never tracked or committed at any point in history; `.env.example` holds only placeholders; every `$queryRaw` call uses parameterized `Prisma.sql`; the public search route explicitly selects only public-safe fields (no birth data, no internal IDs); all 21 admin API routes route through the shared `authorizeMutation` (session + CSRF double-submit + same-origin + live admin re-check); passwords are bcrypt cost 12; error/log output actively redacts connection strings; no hardcoded admin credentials anywhere; Git history contains no large blobs, backups, or datasets (`.git` is 2.5 MB).
+
+**Required cleanup before publishing** (none executed yet — operator approval pending): rotate the Supabase DB password and `AUTH_SECRET`, then delete/relocate `VERCEL_ENVIRONMENT.md`; upgrade `next` to `16.3.0`+; anonymize the real-candidate sample rows in `BAC2025_ANALYSIS.md`/`README.md`; add `.claude/`, `.agents/`, `skills-lock.json` to `.gitignore`; add `LICENSE` and `SECURITY.md`.
+
+**Rotation required**: yes — Supabase DB password and `AUTH_SECRET` (both currently exposed in plaintext in the untracked file above; rotation is warranted independent of Git status).
+
+**Git-history rewrite required**: no — no secret or PII was found in any of the 29 reachable commits; the existing history can be published as-is once the tracked-file/dependency/hygiene fixes above are applied.
+
+**Next approved phase**: none yet — this was a read-only audit. Await explicit operator approval before performing any rotation, file deletion, `.gitignore`/dependency changes, or repository-visibility change.
+
+---
+
+## Credential rotation and production incident — 2026-08-08
+
+Following operator approval, the audit's rotation items were carried out.
+
+**`AUTH_SECRET` rotation**: a new random secret was generated and applied to local `.env` and to Vercel Production + Preview. This immediately invalidates all previously issued admin session cookies (verified from `lib/auth.ts`'s HS256 signature check) — expected, no data impact. `VERCEL_ENVIRONMENT.md` (the file that held the old plaintext credentials, see the audit above) has been deleted from the project directory.
+
+**Supabase database password rotation**: the operator reset the production Supabase password and manually pasted new `DATABASE_URL`/`DIRECT_URL` into Vercel. This caused a **production outage** (`503`, Prisma `"Timed out fetching a new connection from the connection pool"`).
+
+- **Root cause, part 1**: Supabase's dashboard "copy connection string" does not include the query parameters this project's Prisma setup requires — `?pgbouncer=true&sslmode=require&connection_limit=1&pool_timeout=15&connect_timeout=10` for the transaction-pooler `DATABASE_URL` (port 6543), and `?sslmode=require&connection_limit=1&connect_timeout=10` for the session-pooler `DIRECT_URL` (port 5432) — the exact set already documented in `.env.example`. Without `pgbouncer=true`/`connection_limit`, Prisma's default pool exhausts PgBouncer's transaction-mode pool almost immediately in a serverless environment. Fixed by re-appending the documented parameter set to both URLs, preserving the new host/user/password exactly as rotated.
+- **Root cause, part 2 (self-inflicted, caught and fixed in the same session)**: the first remediation attempt piped the corrected value into `vercel env add` through a PowerShell pipeline (`Get-Content | npx vercel ...`), which re-encoded/corrupted the string — Vercel logs showed Prisma rejecting it outright (`"the URL must start with the protocol postgresql://"`). Fixed by re-extracting the already-verified-good value from local `.env` (proven correct by a direct Prisma connectivity check) and re-pushing it to Vercel via plain shell stdin redirection (`< file`) instead of a PowerShell pipe, which preserved the string exactly.
+- Vercel's `DATABASE_URL`/`DIRECT_URL`/`AUTH_SECRET` are configured as **Sensitive** environment variables, which are write-only — `vercel env pull` returns a `[SENSITIVE]` placeholder, not the real value, for any of them. Diagnosis therefore relied on structural checks (query-parameter names, port numbers) rather than reading values back, and on Vercel's own runtime logs for the actual Prisma error text.
+
+**Corrected and verified** (redeployed as `dpl_...5xg6rc7s5...`, aliased to `https://mth-bac.vercel.app`):
+- Local `.env` `DATABASE_URL`/`DIRECT_URL`: updated to the new password with the full documented parameter set.
+- Vercel Production + Preview `DATABASE_URL`/`DIRECT_URL`: same, pushed via `vercel env rm` + `vercel env add < file` (stdin redirect, no interactive prompt, no value ever printed or logged).
+- Direct Prisma connectivity check (read-only, ad hoc script, deleted immediately after use): connected in ~1.4s, `ExamYear` rows returned exactly matched the known-good baseline (2024: 47,217 candidates; 2025: 53,148; 2026: 64,532, published/default) — confirms no data was altered.
+- Live production: `/api/public/meta` → 200 (0.4s warm), `/` → 200, `/api/public/search?number=15049&year=2026` and `?number=00002&year=2025` both returned the exact known-good candidate records (name/series/average/decision/ranks) documented earlier in this file — full read path confirmed end-to-end.
+- All temporary files used to shuttle the new credentials (`new_db_urls.txt` and intermediate temp files in the session scratch directory) were deleted immediately after use; a final sweep confirmed none remain anywhere in the temp directory.
+
+No candidate/result data was read-write touched, no schema or migration was run, no secret value was ever printed to a terminal or written into this document.
+
+---
+
+## GitHub public-repository cleanup — 2026-08-08
+
+Completed the remaining items from the audit above (production behavior untouched — no data, migrations, Supabase config, or Vercel env values were changed in this phase).
+
+**Files changed**:
+- `.gitignore` — added `.claude/`, `.agents/`, `skills-lock.json` (in addition to the already-present `VERCEL_ENVIRONMENT.md` rule). Verified via `git check-ignore` that all four now resolve.
+- `README.md` — the "Verify candidate 00002" section replaced with a generic, fictional-example verification walkthrough (no real name/wilaya/school).
+- `BAC2025_ANALYSIS.md` — the "Candidate present at worksheet row 3" table and the "Sample valid records" table replaced with clearly fictional example rows; the analytical content (column list, cell-type counts, decision/series distributions) is unchanged.
+- `package.json` / `package-lock.json` — `next` upgraded `16.2.10` → `16.3.0` (patch, non-major); `"license": "UNLICENSED"` added, reflecting the operator's explicit choice to keep the repository all-rights-reserved (no OSS license file requested).
+- `SECURITY.md` — new. Vulnerability-reporting contact and scope, no secrets/PII.
+- No `LICENSE` file was added — the operator was asked and chose "all rights reserved / no OSS license."
+
+**Known residual PII (not in this phase's approved scope, flagged for a follow-up decision)**: the same real candidate name redacted from `README.md`/`BAC2025_ANALYSIS.md` still appears in `tests/excel.test.ts`, `IMPLEMENTATION_STATUS.md`, and `scripts/verify-live-api.ts`. Left untouched since the approved scope named only `README.md` and `BAC2025_ANALYSIS.md`.
+
+**Dependency security**: `next@16.3.0` resolves the previously-flagged HIGH-severity Next.js advisories (middleware/proxy auth bypass, SSRF in Server Actions/rewrites, DoS, cache confusion, image-optimization DoS, internal endpoint disclosure) — confirmed absent from a fresh `npm audit --omit=dev`. Four lower-priority findings remain, out of scope for a "Next.js only" upgrade: `brace-expansion` and `nanoid` (transitive, prod dependency tree) and `postcss` (Next.js's own internal/vendored copy, `node_modules/next/node_modules/postcss` — not the project's build-time `postcss`, not attacker-reachable at runtime). None are new; all were already noted in the original audit.
+
+**Verification performed** (all passed): `git status`/`git ls-files` — only the expected files changed, no `.env*`/`.claude`/`.agents`/`skills-lock.json`/`*.xlsx` tracked; current-tree secret scan — only `.env.example` (placeholders) and the known-safe `lib/database-retry.ts` redaction helper and this handoff doc's own prose matched; reachable Git-history secret scan (all commits) — unchanged from the original audit, still only the two already-cleared commits; PII scan for the redacted candidate's name — clean in `README.md`/`BAC2025_ANALYSIS.md`; `npm audit --omit=dev` — 4 findings, none Next.js-specific (see above); `npm run typecheck` — passed; `npx eslint . --max-warnings=0` — passed, zero warnings; `npm test` — 203/203 passed (21 files); `npm run build` — passed, full route manifest generated.
+
+**Git**: committed and pushed to `origin/main` on the existing **private** repository. Repository visibility was not changed.
+
+**Next approved phase**: a final audit pass (re-run the same tree/history/PII/secret checks against the freshly pushed `main`, plus a decision on the three residual-PII files noted above) followed by explicit operator approval to flip the repository to public.
+
+---
+
 ## Standing rules for whoever continues this work
 
 - Never guess or invent academic data (subject names, coefficients, display order, any official BAC rule). If something can't be confirmed from an authoritative source, stop and ask.

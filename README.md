@@ -120,26 +120,30 @@ Validation and failed imports are logged in `ImportBatch`/`ImportError`. The com
 
 An unpublished import batch can be removed from **Import history**. The protected delete operation removes only that batch, its candidates, and errors in a transaction. Published years must be hidden before an import batch can be removed.
 
-## Verify candidate 00002
+## Verify a known candidate
 
-After BAC 2025 is imported and published, search for `00002` in the homepage or run:
+After BAC 2025 is imported and published, pick any candidate number that exists in the workbook you imported (for example, from row 3 of your own `BAC2025.xlsx`) and query it:
 
 ```powershell
-Invoke-RestMethod 'http://localhost:3000/api/public/search?number=00002&year=2025'
+Invoke-RestMethod 'http://localhost:3000/api/public/search?number=<candidate-number>&year=2025'
 ```
 
-Expected public values:
+Illustrative response shape (values below are a fictional example, not a real candidate):
 
-- Candidate number: `00002`
-- Name: `[REDACTED CANDIDATE NAME]`
-- Series: `M`
-- Average: `8.47 /20`
-- Decision: `SESSIONNAIRE` (Arabic: `الدورة التكميلية`; French: `Session complémentaire`)
-- Wilaya: `Trarza`
-- Center: `Lycée Rosso`
-- School: `Rosso Candidat Libre`
+```json
+{
+  "candidateNumber": "00042",
+  "fullName": "Example Candidate Name",
+  "series": "M",
+  "average": 8.47,
+  "decision": "SESSIONNAIRE",
+  "wilaya": "Trarza",
+  "examCenter": "Example Exam Center",
+  "school": "Example School"
+}
+```
 
-Birth date and birth place must not be present in the public response.
+The returned `decision` must translate correctly (Arabic: `الدورة التكميلية`; French: `Session complémentaire` for `SESSIONNAIRE`, and similarly for every other decision value). Birth date and birth place must not be present in the public response.
 
 ## Security
 
