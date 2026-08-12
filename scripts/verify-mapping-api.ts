@@ -61,7 +61,7 @@ async function main() {
   let createdYear = false;
   let structureKey: string | undefined;
   try {
-    const existingYear = await db.examYear.findUnique({ where: { year: temporaryYear } });
+    const existingYear = await db.examYear.findUnique({ where: { year_session: { year: temporaryYear, session: "NORMAL" } } });
     assert(!existingYear, `Temporary verification year ${temporaryYear} already exists`);
     const admin = await db.admin.findFirst({ orderBy: { createdAt: "asc" } });
     assert(admin, "No administrator exists");
@@ -92,7 +92,7 @@ async function main() {
 
     const committed = await postImportApi("commit", firstFile, token, csrf, mapping, String(manual.checksum));
     assert(committed.ok === true && committed.imported === 1, "Mapped workbook did not commit normally");
-    const year = await db.examYear.findUnique({ where: { year: temporaryYear } });
+    const year = await db.examYear.findUnique({ where: { year_session: { year: temporaryYear, session: "NORMAL" } } });
     assert(year, "Temporary exam year was not created");
     const inserted = await db.candidate.findUnique({ where: { examYearId_candidateNumber: { examYearId: year.id, candidateNumber: "99001" } } });
     assert(inserted, "Mapped candidate was not stored");

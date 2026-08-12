@@ -25,7 +25,7 @@ export class PrismaCandidateLookup implements CandidateLookup {
   private async resolveYearId(examYear: number) {
     if (this.yearIdCache.has(examYear)) return this.yearIdCache.get(examYear) ?? null;
     const year = await withDatabaseRetry(
-      () => this.database.examYear.findUnique({ where: { year: examYear }, select: { id: true } }),
+      () => this.database.examYear.findUnique({ where: { year_session: { year: examYear, session: "NORMAL" } }, select: { id: true } }),
       "grade-import-year-lookup",
       { maxAttempts: 3, timeoutMs: 12_000 }
     );
@@ -83,7 +83,7 @@ export class PrismaSubjectSchemeLookup implements SubjectSchemeLookup {
     const cached = this.cache.get(key);
     if (cached) return cached;
     const examYear = await withDatabaseRetry(
-      () => this.database.examYear.findUnique({ where: { year: input.examYear }, select: { id: true } }),
+      () => this.database.examYear.findUnique({ where: { year_session: { year: input.examYear, session: "NORMAL" } }, select: { id: true } }),
       "grade-import-scheme-year-lookup",
       { maxAttempts: 3, timeoutMs: 12_000 }
     );

@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     const rawRows = parseJsonArray(input.buffer);
     const { rows, malformed } = normalizeJsonRows(rawRows, DEFAULT_JSON_FIELD_MAPPING);
 
-    const examYear = await db.examYear.findUnique({ where: { year: parsedYear.data.year }, select: { id: true } });
+    const examYear = await db.examYear.findUnique({ where: { year_session: { year: parsedYear.data.year, session: "NORMAL" } }, select: { id: true } });
     const report = await buildDiscoveryReport(examYear?.id ?? null, EXAM_TYPE, rows);
 
     return NextResponse.json({ ...report, malformedRowCount: malformed.length });

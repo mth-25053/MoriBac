@@ -19,7 +19,7 @@ async function main() {
   const db = new PrismaClient();
   try {
     const { browseResults, findCandidateResult } = await import("../lib/results");
-    const year = await db.examYear.findUnique({ where: { year: yearNumber } });
+    const year = await db.examYear.findUnique({ where: { year_session: { year: yearNumber, session: "NORMAL" } } });
     assert(year, "Exam year does not exist");
     const sample = await db.candidate.findFirst({
       where: { examYearId: year.id, wilaya: { not: null }, examCenter: { not: null }, school: { not: null } },

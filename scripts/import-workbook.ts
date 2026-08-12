@@ -95,7 +95,7 @@ async function main() {
     const admin = await retry(() => db.admin.findFirst({ orderBy: { createdAt: "asc" } }));
     assert(admin, "No administrator exists");
     const existing = await retry(() => db.examYear.findUnique({
-      where: { year },
+      where: { year_session: { year, session: "NORMAL" } },
       select: { id: true, _count: { select: { candidates: true } }, imports: { where: { checksum: local.checksum }, select: { status: true } } }
     }));
 
@@ -126,7 +126,7 @@ async function main() {
     const committed = await post("commit", buffer, token, csrf, String(preview.checksum));
     assert(committed.ok === true && committed.imported === local.validRows, "Commit count differs from preview");
 
-    const importedYear = await retry(() => db.examYear.findUniqueOrThrow({ where: { year }, select: { id: true } }));
+    const importedYear = await retry(() => db.examYear.findUniqueOrThrow({ where: { year_session: { year, session: "NORMAL" } }, select: { id: true } }));
     const published = await maybePublish(importedYear.id);
 
     console.log(JSON.stringify({

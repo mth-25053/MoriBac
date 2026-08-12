@@ -112,7 +112,7 @@ async function main() {
   const db = new PrismaClient();
   try {
     const examYear = await db.examYear.upsert({
-      where: { year: EXAM_YEAR },
+      where: { year_session: { year: EXAM_YEAR, session: "NORMAL" } },
       create: { year: EXAM_YEAR },
       update: {}
     });

@@ -43,6 +43,7 @@ type Progress = { status: "VALIDATED" | "IMPORTED" | "FAILED"; totalRows: number
 export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: Locale }) {
   const [file, setFile] = useState<File | null>(null);
   const [year, setYear] = useState(new Date().getFullYear());
+  const [session, setSession] = useState<"NORMAL" | "COMPLEMENTAIRE">("NORMAL");
   const [report, setReport] = useState<Report | null>(null);
   const [mappingRequest, setMappingRequest] = useState<MappingRequest | null>(null);
   const [loading, setLoading] = useState(false);
@@ -151,6 +152,7 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
       if (uploadId) body.set("uploadId", uploadId);
       else body.set("file", file);
       body.set("year", String(year));
+      body.set("session", session);
       const mapping = mappingOverride ?? report?.mapping;
       if (mapping) body.set("mapping", JSON.stringify(mapping));
       if (report) body.set("checksum", report.checksum);
@@ -211,6 +213,27 @@ export function ImportClient({ dict, locale }: { dict: AdminDictionary; locale: 
       <div className="grid gap-4 sm:grid-cols-2">
         <label><span className="label">{dict.examYear}</span><input className="field" type="number" min="2000" max="2100" value={year} onChange={(event) => { setYear(Number(event.target.value)); resetResult(); }} /></label>
         <label><span className="label">{dict.file}</span><input className="field file:me-3 file:rounded-lg file:border-0 file:bg-[var(--accent-soft)] file:px-3 file:py-1 file:font-bold" type="file" accept=".xlsx" onChange={(event) => { uploadRef.current = null; setFile(event.target.files?.[0] || null); resetResult(); }} /></label>
+      </div>
+      <div className="mt-4">
+        <span className="label">{dict.examSession}</span>
+        <div className="mt-2 flex gap-2" role="radiogroup" aria-label={dict.examSession}>
+          {(["NORMAL", "COMPLEMENTAIRE"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={session === option}
+              onClick={() => { setSession(option); resetResult(); }}
+              className="rounded-lg border px-4 py-2 text-sm font-bold transition-colors"
+              style={session === option
+                ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" }
+                : { borderColor: "var(--line)" }}
+            >
+              {option === "NORMAL" ? dict.examSessionNormal : dict.examSessionComplementaire}
+            </button>
+          ))}
+        </div>
+        {session === "COMPLEMENTAIRE" && <p className="muted mt-2 text-xs">{dict.examSessionComplementaire} — {year}</p>}
       </div>
       <button className="button mt-5" disabled={!file || loading} onClick={() => preview()}>{loading ? "…" : dict.validate}</button>
     </section>

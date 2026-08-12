@@ -21,7 +21,7 @@ async function main() {
 
   const db = new PrismaClient();
   try {
-    const year = await db.examYear.findUnique({ where: { year: yearNumber } });
+    const year = await db.examYear.findUnique({ where: { year_session: { year: yearNumber, session: "NORMAL" } } });
     if (!year) throw new Error("Exam year does not exist");
     const batch = await db.importBatch.findUnique({ where: { checksum: report.checksum } });
     if (!batch || batch.examYearId !== year.id || batch.status !== "IMPORTED") throw new Error("Imported batch does not match this workbook and year");

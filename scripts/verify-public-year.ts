@@ -60,7 +60,7 @@ async function main() {
   let yearId = "";
   let originalPublished = false;
   try {
-    const year = await retry(() => db.examYear.findUnique({ where: { year: yearNumber } }));
+    const year = await retry(() => db.examYear.findUnique({ where: { year_session: { year: yearNumber, session: "NORMAL" } } }));
     assert(year, "Exam year does not exist");
     yearId = year.id;
     originalPublished = year.isPublished;

@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return apiError("INVALID_SCHEME_PROPOSALS");
 
   try {
-    const examYear = await db.examYear.upsert({ where: { year: parsed.data.year }, create: { year: parsed.data.year }, update: {} });
+    const examYear = await db.examYear.upsert({ where: { year_session: { year: parsed.data.year, session: "NORMAL" } }, create: { year: parsed.data.year }, update: {} });
     const schemes = parsed.data.schemes.map((scheme) => ({
       series: scheme.series,
       subjectCode: scheme.subjectCode,

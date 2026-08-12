@@ -1,4 +1,4 @@
-import type { ImportStatus, Prisma } from "@prisma/client";
+import type { ExamSession, ImportStatus, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withDatabaseRetry } from "@/lib/database-retry";
 import type { ImportReport, ParsedCandidate, RowError } from "@/lib/excel";
@@ -35,14 +35,16 @@ export async function saveValidationReport(input: {
   report: ImportReport;
   fileName: string;
   year: number;
+  session?: ExamSession;
   adminId: string;
   uploadId: string;
 }) {
+  const session = input.session ?? "NORMAL";
   return withDatabaseRetry(
     () => db.$transaction(async (tx) => {
       const examYear = await tx.examYear.upsert({
-        where: { year: input.year },
-        create: { year: input.year },
+        where: { year_session: { year: input.year, session } },
+        create: { year: input.year, session },
         update: {}
       });
       const existing = await tx.importBatch.findUnique({ where: { checksum: input.report.checksum } });

@@ -14,7 +14,7 @@ async function main() {
   try {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
-        const year = await db.examYear.update({ where: { year: yearNumber }, data: { isPublished: published } });
+        const year = await db.examYear.update({ where: { year_session: { year: yearNumber, session: "NORMAL" } }, data: { isPublished: published } });
         console.log(JSON.stringify({ year: year.year, isPublished: year.isPublished }));
         return;
       } catch (error) {

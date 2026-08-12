@@ -14,6 +14,18 @@ enum ImportStatus {
   FAILED
 }
 
+/**
+ * Distinguishes a normal BAC session from a complementary/retake session within
+ * the same calendar year. Additive on purpose: existing rows default to NORMAL
+ * via the migration, so every pre-existing ExamYear (including BAC 2026 normal)
+ * is unaffected. A candidate number is only unique within (year, session), so
+ * the same numDossier can legitimately exist in both without ever colliding.
+ */
+enum ExamSession {
+  NORMAL
+  COMPLEMENTAIRE
+}
+
 enum GradeImportSourceType {
   JSON
   CSV
@@ -68,7 +80,8 @@ model ImportUploadChunk {
 
 model ExamYear {
   id                 String             @id @default(cuid())
-  year               Int                @unique
+  year               Int
+  session            ExamSession        @default(NORMAL)
   isPublished        Boolean            @default(false)
   isDefault          Boolean            @default(false)
   createdAt          DateTime           @default(now())
@@ -78,6 +91,7 @@ model ExamYear {
   subjectSchemes     SubjectScheme[]
   gradeImportBatches GradeImportBatch[]
 
+  @@unique([year, session])
   @@index([isPublished, isDefault])
 }
 

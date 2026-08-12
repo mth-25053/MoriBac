@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     const { rows, malformed } = normalizeJsonRows(rawRows, DEFAULT_JSON_FIELD_MAPPING);
 
     stage = "exam-year-resolve";
-    const examYear = await db.examYear.upsert({ where: { year: parsedYear.data.year }, create: { year: parsedYear.data.year }, update: {} });
+    const examYear = await db.examYear.upsert({ where: { year_session: { year: parsedYear.data.year, session: "NORMAL" } }, create: { year: parsedYear.data.year }, update: {} });
 
     stage = "validate";
     const candidateLookup = new PrismaCandidateLookup();

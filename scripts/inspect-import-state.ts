@@ -17,7 +17,7 @@ async function main() {
   try {
     const mapping = await retry(() => db.excelMapping.findUnique({ where: { structureKey: process.argv[2] } }));
     const year = await retry(() => db.examYear.findUnique({
-      where: { year: Number(process.argv[3]) },
+      where: { year_session: { year: Number(process.argv[3]), session: "NORMAL" } },
       select: { year: true, isPublished: true, _count: { select: { candidates: true } }, imports: { select: { id: true, checksum: true, status: true, validRows: true, invalidRows: true, createdAt: true } } }
     }));
     console.log(JSON.stringify({ mapping, year }, null, 2));

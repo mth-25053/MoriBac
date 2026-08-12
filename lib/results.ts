@@ -7,7 +7,13 @@ import { withDatabaseRetry } from "@/lib/database-retry";
 export async function getPublishedYear(requestedYear?: number) {
   return withDatabaseRetry(
     () => requestedYear
-      ? db.examYear.findFirst({ where: { year: requestedYear, isPublished: true } })
+      // A bare ?year=2026 must keep resolving to the normal session deterministically,
+      // even once a COMPLEMENTAIRE ExamYear also exists for the same year - existing
+      // public URLs/bookmarks must never silently start resolving to a different session.
+      ? db.examYear.findFirst({ where: { year: requestedYear, session: "NORMAL", isPublished: true } })
+      // No explicit year: follow whichever published ExamYear is currently marked
+      // default, regardless of session - this is the operator-controlled "primary
+      // edition" switch (e.g. complementary session temporarily set as default).
       : db.examYear.findFirst({ where: { isPublished: true }, orderBy: [{ isDefault: "desc" }, { year: "desc" }] }),
     "published-year-read"
   );

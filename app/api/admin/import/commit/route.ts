@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   try {
     stage = "request-form-read";
     const form = await request.formData();
-    const parsedYear = yearSchema.safeParse({ year: form.get("year") });
+    const parsedYear = yearSchema.safeParse({ year: form.get("year"), session: form.get("session") || undefined });
     const expectedChecksum = String(form.get("checksum") || "");
     if (!parsedYear.success || !expectedChecksum) return apiError("FILE_YEAR_CHECKSUM_REQUIRED", 400, { requestId: id });
 
@@ -76,6 +76,7 @@ export async function POST(request: Request) {
       report,
       fileName: input.fileName,
       year: parsedYear.data.year,
+      session: parsedYear.data.session,
       adminId: auth.session.adminId,
       uploadId: input.uploadId
     });

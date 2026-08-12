@@ -25,7 +25,10 @@ export const loginSchema = z.object({
   password: z.string().min(10).max(200)
 });
 
-export const yearSchema = z.object({ year: z.coerce.number().int().min(2000).max(2100) });
+export const yearSchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
+  session: z.enum(["NORMAL", "COMPLEMENTAIRE"]).optional().default("NORMAL")
+});
 
 export const settingsSchema = z.object({
   siteNoticeAr: z.string().trim().max(500),

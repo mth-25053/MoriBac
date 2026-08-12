@@ -82,7 +82,7 @@ async function main() {
   const db = new PrismaClient();
   let originalPublished: boolean | undefined;
   try {
-    const year = await db.examYear.findUnique({ where: { year: yearNumber } });
+    const year = await db.examYear.findUnique({ where: { year_session: { year: yearNumber, session: "NORMAL" } } });
     assert(year, "Imported exam year does not exist");
     originalPublished = year.isPublished;
     console.log("VERIFY_STAGE database-row-comparison");
@@ -212,7 +212,7 @@ async function main() {
     }, null, 2));
   } finally {
     if (originalPublished !== undefined) {
-      const year = await db.examYear.findUnique({ where: { year: yearNumber } });
+      const year = await db.examYear.findUnique({ where: { year_session: { year: yearNumber, session: "NORMAL" } } });
       if (year && year.isPublished !== originalPublished) {
         await db.examYear.update({ where: { id: year.id }, data: { isPublished: originalPublished } });
       }

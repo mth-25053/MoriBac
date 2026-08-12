@@ -10,7 +10,7 @@ async function main() {
   const number = process.argv[3];
   const db = new PrismaClient();
   try {
-    const examYear = await db.examYear.findUnique({ where: { year } });
+    const examYear = await db.examYear.findUnique({ where: { year_session: { year, session: "NORMAL" } } });
     const candidate = examYear ? await db.candidate.findUnique({
       where: { examYearId_candidateNumber: { examYearId: examYear.id, candidateNumber: number } }
     }) : null;

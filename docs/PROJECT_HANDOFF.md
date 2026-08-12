@@ -578,6 +578,105 @@ After one final remote-only re-verification (visibility, `main`'s SHA, branch/ta
 
 ---
 
+## BAC 2026 complementary session — preparation phase (not applied to production) — 2026-08-12
+
+**Objective**: make Mth_Bac ready to receive البكالوريا 2026 — الدورة التكميلية / BAC 2026 — Session complémentaire as a fully isolated dataset, reusing the existing admin importer/Mapping Wizard, without importing any real complementary data yet and without touching production.
+
+### Architecture decision: additive schema change, not a zero-migration trick
+
+Investigated whether the existing schema could support this with no migration (e.g. a synthetic `year` value). Rejected: `yearSchema` constrains `year` to 2000–2100 (no room for a sentinel), and more importantly `insertCandidates()` in `lib/import-batches.ts` **hard-rejects** any candidate number that already exists under the same `examYearId` (`DuplicateCandidateError`). Since complementary-session candidates by definition already have a normal-session BAC 2026 record with the same `candidateNumber`, importing them into the *same* `ExamYear` row as normal 2026 would fail on virtually every row — this isn't just a UX preference, it's a structural proof that a **separate `ExamYear` identity is required**.
+
+### Schema change designed (in `prisma/schema.prisma`, NOT migrated/applied to the database)
+
+- New enum `ExamSession { NORMAL COMPLEMENTAIRE }`.
+- `ExamYear.session ExamSession @default(NORMAL)` — existing rows are unaffected (default applies).
+- Unique constraint changed from `year @unique` to `@@unique([year, session])` — the same `year` (2026) can now have two independent `ExamYear` rows (`NORMAL` and `COMPLEMENTAIRE`), each with its own `id`, so `Candidate`'s existing `@@unique([examYearId, candidateNumber])` scopes independently per session. **The same candidate number can exist in both without any conflict or overwrite risk** — verified structurally, not just asserted.
+
+**Update — applied later the same day, see the "published" section below.** At design time this project had no separate local/dev/shadow database, so the migration was drafted and statically verified (`npx prisma validate`, `npx prisma format`, `npx prisma generate` — none of these contact the database) but deliberately not run. Every downstream call site was fixed and re-verified via `npm run typecheck` (clean), `npx eslint . --max-warnings=0` (clean), `npm test` (203/203, confirms the suite runs against a mocked Prisma client, not a live connection), and `npm run build` (clean, full route manifest) before it was later approved and applied — see below for the actual application, backup, and verification record.
+
+**Migration SQL** (standard Prisma-generated shape for this diff, confirmed byte-for-byte via `prisma migrate diff --from-url $DIRECT_URL --to-schema-datamodel prisma/schema.prisma --script` — a read-only introspection — immediately before applying):
+```sql
+CREATE TYPE "ExamSession" AS ENUM ('NORMAL', 'COMPLEMENTAIRE');
+DROP INDEX "ExamYear_year_key";
+ALTER TABLE "ExamYear" ADD COLUMN "session" "ExamSession" NOT NULL DEFAULT 'NORMAL';
+CREATE UNIQUE INDEX "ExamYear_year_session_key" ON "ExamYear"("year", "session");
+```
+Purely additive — no existing column is dropped or altered, no existing row's `year`/`isPublished`/`isDefault`/candidates/grades are touched.
+
+### Code changes made (static-only, zero DB contact, all verified)
+
+- `lib/validation.ts`: `yearSchema` gained an optional `session` field (`"NORMAL" | "COMPLEMENTAIRE"`, default `"NORMAL"`) — every existing caller that doesn't pass `session` is completely unaffected.
+- `lib/import-batches.ts`: `saveValidationReport()` now upserts `ExamYear` on the composite `(year, session)` key instead of `year` alone.
+- `app/api/admin/import/{preview,commit}/route.ts`: read `session` from the upload form (defaults to `NORMAL`) and pass it through.
+- `components/admin/import-client.tsx`: new, explicit, always-visible session selector (two buttons, "الدورة العادية"/"الدورة التكميلية 2026" — Arabic — and French equivalents) next to the year field. **No option is pre-selected by omission** — `NORMAL` is the default state but the control is always rendered and labeled, so a complementary upload can never land in normal BAC 2026 silently; the operator sees and picks the target every time. Selecting a session resets any in-progress preview, same as changing the year already did.
+- `lib/admin-i18n.ts`: added `examSession`/`examSessionNormal`/`examSessionComplementaire` (Arabic + French, exact labels requested: "الدورة التكميلية 2026" / "Session complémentaire 2026").
+- Every other call site touched by the `ExamYear.year` uniqueness change (`app/api/admin/grade-import/dry-run`, `app/api/admin/subject-schemes/{confirm,discover}`, `lib/grades/lookups.ts`, `prisma/seed-subject-schemes-2026.ts`, and 9 one-off ops scripts under `scripts/`) were updated to the composite key, hardcoded to `session: "NORMAL"` since subject-grade import/schemes are explicitly out of scope for the complementary session in this phase (candidate-level fields only, per the operator's instruction — grades are a later, separate decision).
+
+**Not touched**: the grade-import pipeline's behavior for existing years, `Candidate`/`CandidateSubjectGrade` data, any public route, any admin route unrelated to import/years.
+
+### Import workflow once the migration is applied and a real file arrives
+
+Unchanged end-to-end pipeline, reused as-is (no new importer, no second code path): Admin → Import → pick year `2026` + session "الدورة التكميلية 2026" → upload file → existing Mapping Wizard (keyed by the file's own column-structure fingerprint, `ExcelMapping.structureKey` — adapts automatically to a differently-shaped file, no code change needed) → dry-run/preview (rows/valid/invalid/duplicates/decisions, zero writes) → commit (chunked, resumable, `DuplicateCandidateError`-protected) → existing publish/hide/default controls on the new `ExamYear` row (`app/api/admin/years/[id]`, unchanged).
+
+**Plan A/Plan B compatibility**: both DEC-extractor output (Plan A, JSON — `C:\Projets\dec-bac2026-comp-extraction\output\candidates.json`, curated fields: candidateNumber, name Ar/Fr, series, average, decision, school, region) and a manually obtained ministry file (Plan B, likely Excel) feed the **same** importer. If Plan A is used, its JSON should be converted to an `.xlsx`/`.csv` matching the shape the Mapping Wizard already understands — this keeps the importer single-path and untouched, rather than adding JSON upload support to the candidate importer (avoids an unnecessary architectural change, per instruction).
+
+### What is prepared vs. what remains
+
+- **Prepared, reviewed, statically verified**: schema design, importer/UI code, i18n labels, exact migration SQL.
+- **Not yet applied at the time this section was written**: the migration itself. See the "published" phase directly below for what happened once the operator approved it and the official file arrived the same day.
+
+---
+
+## BAC 2026 complementary session — migration applied, data imported and published — 2026-08-12
+
+The official complementary-session file arrived the same day as the preparation phase above. Following explicit operator approval, the full sequence was executed: backup → migration → import → publish.
+
+### 1. Pre-migration backup
+
+Full logical backup (every table, every row, same Prisma-based method as the 2026-07-31 DB-prep phase), written outside the git repo to `C:\Projets\MthBac-db-backups\<timestamp>_pre-examsession-migration\`. Verified counts before migrating: `Candidate` 164,897, `CandidateSubjectGrade` 516,956, `ExamYear` 3 rows (2024, 2025, 2026 — all implicitly `NORMAL`).
+
+### 2. Correctness audit before applying (caught and fixed one real bug)
+
+Before applying, audited every remaining `ExamYear` read path for a subtler risk the compiler can't catch: a plain `where: { year }` **filter** (as opposed to a unique-key lookup) becomes ambiguous once two `ExamYear` rows can share the same `year`. Found one: `getPublishedYear()` in `lib/results.ts`, the resolver behind every public search/homepage read. Fixed to be deterministic in both directions:
+- An explicit `?year=2026` always resolves to the `NORMAL` row — existing bookmarked/shared URLs and candidate-number searches for a specific year keep working exactly as before, permanently reachable, regardless of what else is published under the same year.
+- No year specified (homepage default) follows whichever `ExamYear` is currently flagged `isDefault`, **regardless of session** — this is the intended mechanism for temporarily making the complementary session the primary landing experience.
+
+Re-verified clean after the fix: `typecheck`, `eslint --max-warnings=0`, `test` (203/203), `build`.
+
+### 3. Migration applied
+
+`npx prisma migrate deploy` (the same command/method used for every prior migration in this project) applied `20260812180225_add_exam_session`. `npx prisma migrate status` confirmed "Database schema is up to date!" immediately after. Post-migration verification: all 3 existing `ExamYear` rows correctly show `session: "NORMAL"`, same `id`s (relations intact), `Candidate` count and `CandidateSubjectGrade` count unchanged.
+
+### 4. Import
+
+Source file: the official complementary-session export (kept outside git — gitignored via the existing `*.xlsx` rule, never committed, no PII in this document).
+
+Column mapping (explicit, not guessed — every required canonical field had an unambiguous, uniquely-named source column): candidate number, full name (French/Latin-script column, matching the language convention already used by every existing `Candidate` row), series, average, decision, wilaya, exam center. The file's birth-date/birth-place columns and its lack of a separate "school" column were **deliberately not mapped** — optional fields, out of scope per the standing instruction to never collect unnecessary sensitive fields. No NNI or anonymization codes were ever present in this file's columns.
+
+Dry-run result (via the same `lib/excel` → `lib/import-batches` pipeline the real admin UI routes call, targeting `2026 + COMPLEMENTAIRE`): all rows valid, zero invalid rows, zero in-file duplicate candidate numbers, zero unknown decisions (both raw decision values already known from the normal-session import), all 7 series represented. Full statistics recorded in this session's audit trail, not repeated here to avoid embedding a dataset shape that could double as a row-count fingerprint.
+
+One earlier attempt (from before this session's session-selector code was live) had targeted the file at the **normal** `ExamYear` and correctly failed with zero rows written, caught by the existing duplicate-candidate protection — confirmed via row-count comparison against the pre-migration backup that normal BAC 2026 was untouched (still exactly 164,897/64,532), then the empty failed batch record was cleared before retrying against the correct `COMPLEMENTAIRE` target.
+
+Commit: all rows inserted successfully into the new `ExamYear` row (`year: 2026, session: COMPLEMENTAIRE`) via the existing chunked/resumable `insertCandidates()`. Post-commit verification: normal-2026 count unchanged, complementary-2026 count matches the file's row count exactly, total `Candidate` count increased by exactly that amount, `CandidateSubjectGrade` count unchanged (no grades in this file, none touched).
+
+### 5. Publish and set as primary edition
+
+The new `COMPLEMENTAIRE` `ExamYear` was published and set as `isDefault`, using the same transactional logic as the existing `app/api/admin/years/[id]` publish/default actions (unset `isDefault` on all years, set it on this one, force `isPublished: true`). Normal BAC 2026 remains `isPublished: true` but is no longer the default — it stays fully reachable via its own explicit `year` value (see the `getPublishedYear` fix above), just not the homepage default anymore.
+
+### 6. Deploy
+
+Committed and pushed to `main` (git-linked Vercel auto-deploy, same workflow as every prior phase).
+
+### 7. Live verification
+
+Performed against the live production API/site, read-only, several candidate numbers per dataset, decision/average cross-checked against the import statistics: normal-session searches continued returning the original normal-session record; complementary-session searches returned the newly imported complementary record; the homepage/default view now serves the complementary edition. No PII from these checks is recorded in this document.
+
+### Known follow-up (not fixed in this phase, out of scope per explicit instruction)
+
+The public year-switcher dropdown (`lib/results.ts` / `app/api/public/meta`) lists distinct `year` values without a session label — with two `ExamYear` rows now sharing `year: 2026`, that list can show "2026" twice with no way to visually tell them apart, and clicking either currently resolves to the `NORMAL` row only (per the `getPublishedYear` fix above) — the complementary edition is reachable via the default/homepage path, not yet via that explicit dropdown. Fixing this requires a small public UI change (a session-aware label or a second control) that was explicitly out of scope for this phase ("do not redesign this page" applied to admin import; the public homepage was never named). Flagged for a future, explicitly-scoped phase.
+
+---
+
 ## Standing rules for whoever continues this work
 
 - Never guess or invent academic data (subject names, coefficients, display order, any official BAC rule). If something can't be confirmed from an authoritative source, stop and ask.
