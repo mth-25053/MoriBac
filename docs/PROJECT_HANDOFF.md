@@ -637,11 +637,9 @@ Full logical backup (every table, every row, same Prisma-based method as the 202
 
 ### 2. Correctness audit before applying (caught and fixed one real bug)
 
-Before applying, audited every remaining `ExamYear` read path for a subtler risk the compiler can't catch: a plain `where: { year }` **filter** (as opposed to a unique-key lookup) becomes ambiguous once two `ExamYear` rows can share the same `year`. Found one: `getPublishedYear()` in `lib/results.ts`, the resolver behind every public search/homepage read. Fixed to be deterministic in both directions:
-- An explicit `?year=2026` always resolves to the `NORMAL` row — existing bookmarked/shared URLs and candidate-number searches for a specific year keep working exactly as before, permanently reachable, regardless of what else is published under the same year.
-- No year specified (homepage default) follows whichever `ExamYear` is currently flagged `isDefault`, **regardless of session** — this is the intended mechanism for temporarily making the complementary session the primary landing experience.
+Before applying, audited every remaining `ExamYear` read path for a subtler risk the compiler can't catch: a plain `where: { year }` **filter** (as opposed to a unique-key lookup) becomes ambiguous once two `ExamYear` rows can share the same `year`. Found one: `getPublishedYear()` in `lib/results.ts`, the resolver behind every public search/homepage read.
 
-Re-verified clean after the fix: `typecheck`, `eslint --max-warnings=0`, `test` (203/203), `build`.
+**Superseded same day, see "decision-display bug" section below**: the first fix here hardcoded the explicit-`?year=` branch to always resolve to `NORMAL`. That turned out to be wrong once the operator decided the complementary session should be the *only* public edition — the homepage's own candidate-number search always sends an explicit `?year=`, so it kept resolving to the (by-then-unpublished) normal dataset instead of complementary, showing stale decisions. Corrected to resolve by `isPublished` status alone for both branches, which stays unambiguous by construction since at most one session per year is ever published at a time (an operator-enforced invariant, not a database constraint).
 
 ### 3. Migration applied
 
@@ -673,7 +671,39 @@ Performed against the live production API/site, read-only, several candidate num
 
 ### Known follow-up (not fixed in this phase, out of scope per explicit instruction)
 
-The public year-switcher dropdown (`lib/results.ts` / `app/api/public/meta`) lists distinct `year` values without a session label — with two `ExamYear` rows now sharing `year: 2026`, that list can show "2026" twice with no way to visually tell them apart, and clicking either currently resolves to the `NORMAL` row only (per the `getPublishedYear` fix above) — the complementary edition is reachable via the default/homepage path, not yet via that explicit dropdown. Fixing this requires a small public UI change (a session-aware label or a second control) that was explicitly out of scope for this phase ("do not redesign this page" applied to admin import; the public homepage was never named). Flagged for a future, explicitly-scoped phase.
+The public year-switcher dropdown (`lib/results.ts` / `app/api/public/meta`) lists distinct `year` values without a session label — with two `ExamYear` rows now sharing `year: 2026`, that list can show "2026" twice with no way to visually tell them apart. As of the fix below this is now cosmetic only (clicking either resolves correctly, since only one session per year is ever published at a time) — but it can still look like a duplicate entry. Flagged for a future, explicitly-scoped public-UI phase.
+
+---
+
+## BAC 2026 complementary session — production fix: decision display + complementary-only public site — 2026-08-12
+
+Two follow-up production issues reported the same day, both traced to the same root cause and fixed together.
+
+### Bug: candidate-number search showed stale/wrong decisions
+
+**Root cause**: the previous phase's `getPublishedYear()` fix hardcoded its explicit-`?year=` branch to always resolve `NORMAL`. The homepage's own number-search flow (`components/home-experience.tsx`) always sends an explicit `?year=`, so every real search kept resolving to the normal-session record (with its old, sometimes-misleading decision, e.g. `SESSIONNAIRE`) instead of the newly published complementary one — even though the homepage's own default/no-year view already correctly showed complementary data. The API always returned a `decision` field; it was simply the wrong session's value.
+
+**Fix** (`lib/results.ts`): `getPublishedYear()` now resolves both branches (explicit year and default) by `isPublished` status alone, no session hardcode. This is safe and unambiguous because at most one session per `year` is ever published at a time (enforced operationally via the publish/unpublish switch below, not a database constraint) — exactly the invariant the next change establishes.
+
+### Change: complementary session made the only public edition
+
+Per operator instruction, all `NORMAL`-session `ExamYear` rows (2024, 2025, 2026) were set `isPublished: false, isDefault: false` — a flag-only change via the existing publish/unpublish mechanism, **no candidate data touched, nothing deleted**. Only `2026 + COMPLEMENTAIRE` remains published and default. Verified unchanged candidate counts per year immediately after: 2024 → 47,217, 2025 → 53,148, 2026 NORMAL → 64,532, 2026 COMPLEMENTAIRE → 6,639.
+
+Added a visible banner ("نتائج البكالوريا 2026 — الدورة التكميلية" / "Résultats du BAC 2026 — Session complémentaire") at the top of the public homepage, shown whenever the resolved edition's `session` is `COMPLEMENTAIRE` — new `session` field threaded through `getHomeInitialData()` and `/api/public/meta` for this purpose (previously not exposed to the client at all).
+
+### Verification performed (all live, read-only, against production)
+
+- 7 real complementary candidate numbers (drawn directly from the imported dataset, not guessed) — both `?number=X` and `?number=X&year=2026` (the homepage's actual request shape) — all correctly return the complementary record with a visible, correct `decision`.
+- Live name search confirmed resolving to the complementary dataset.
+- A normal-2026-only candidate correctly returns `null` under the public search (no fallback to an unpublished dataset).
+- `/api/public/meta` confirmed exactly one published year (`2026`, `session: COMPLEMENTAIRE`, `isDefault: true`).
+- Homepage HTML confirmed containing the Arabic banner text.
+- `typecheck`, `eslint --max-warnings=0`, `build` all clean before deploying.
+- `git log` confirms the source `.xlsx` was never committed at any point.
+
+### Deployed
+
+Committed and pushed to `main` (git-linked Vercel auto-deploy), same workflow as every prior phase.
 
 ---
 
