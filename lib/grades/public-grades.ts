@@ -9,6 +9,9 @@ export type PublicSubjectGrade = {
   coefficient: number | null;
   /** Null exactly when status is "EXEMPT". */
   mark: number | null;
+  /** Complementary-session detail only - null for every normal-session row. */
+  noteS1: number | null;
+  noteS2: number | null;
   status: GradeStatus;
   displayOrder: number;
 };
@@ -37,6 +40,8 @@ export async function getCandidateSubjectGrades(examYearId: string, candidateNum
       orderBy: { subjectScheme: { displayOrder: "asc" } },
       select: {
         mark: true,
+        noteS1: true,
+        noteS2: true,
         status: true,
         subjectScheme: { select: { subjectCode: true, nameAr: true, nameFr: true, coefficient: true, displayOrder: true } }
       }
@@ -51,6 +56,8 @@ export async function getCandidateSubjectGrades(examYearId: string, candidateNum
     nameFr: grade.subjectScheme.nameFr,
     coefficient: grade.subjectScheme.coefficient === null ? null : Number(grade.subjectScheme.coefficient),
     mark: grade.mark === null ? null : Number(grade.mark),
+    noteS1: grade.noteS1 === null ? null : Number(grade.noteS1),
+    noteS2: grade.noteS2 === null ? null : Number(grade.noteS2),
     status: grade.status,
     displayOrder: grade.subjectScheme.displayOrder
   }));

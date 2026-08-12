@@ -34,29 +34,29 @@ describe("getCandidateSubjectGrades", () => {
   it("returns GRADED grades ordered by displayOrder, with coefficient/mark as plain numbers", async () => {
     mocks.candidateFindUnique.mockResolvedValue({ id: "cand-1" });
     mocks.candidateSubjectGradeFindMany.mockResolvedValue([
-      { mark: 15.5, status: "GRADED", subjectScheme: { subjectCode: "MT", nameAr: "الرياضيات", nameFr: "Mathématiques", coefficient: 5, displayOrder: 1 } },
-      { mark: 12, status: "GRADED", subjectScheme: { subjectCode: "AR", nameAr: "اللغة العربية", nameFr: "Arabe", coefficient: null, displayOrder: 2 } }
+      { mark: 15.5, noteS1: null, noteS2: null, status: "GRADED", subjectScheme: { subjectCode: "MT", nameAr: "الرياضيات", nameFr: "Mathématiques", coefficient: 5, displayOrder: 1 } },
+      { mark: 12, noteS1: null, noteS2: null, status: "GRADED", subjectScheme: { subjectCode: "AR", nameAr: "اللغة العربية", nameFr: "Arabe", coefficient: null, displayOrder: 2 } }
     ]);
     const result = await getCandidateSubjectGrades("year-1", "00215");
     expect(result).toEqual([
-      { subjectCode: "MT", nameAr: "الرياضيات", nameFr: "Mathématiques", coefficient: 5, mark: 15.5, status: "GRADED", displayOrder: 1 },
-      { subjectCode: "AR", nameAr: "اللغة العربية", nameFr: "Arabe", coefficient: null, mark: 12, status: "GRADED", displayOrder: 2 }
+      { subjectCode: "MT", nameAr: "الرياضيات", nameFr: "Mathématiques", coefficient: 5, mark: 15.5, noteS1: null, noteS2: null, status: "GRADED", displayOrder: 1 },
+      { subjectCode: "AR", nameAr: "اللغة العربية", nameFr: "Arabe", coefficient: null, mark: 12, noteS1: null, noteS2: null, status: "GRADED", displayOrder: 2 }
     ]);
     expect(mocks.candidateSubjectGradeFindMany).toHaveBeenCalledWith({
       where: { candidateId: "cand-1" },
       orderBy: { subjectScheme: { displayOrder: "asc" } },
-      select: { mark: true, status: true, subjectScheme: { select: { subjectCode: true, nameAr: true, nameFr: true, coefficient: true, displayOrder: true } } }
+      select: { mark: true, noteS1: true, noteS2: true, status: true, subjectScheme: { select: { subjectCode: true, nameAr: true, nameFr: true, coefficient: true, displayOrder: true } } }
     });
   });
 
   it("returns an EXEMPT subject with mark: null and status: EXEMPT, never a numeric mark", async () => {
     mocks.candidateFindUnique.mockResolvedValue({ id: "cand-1" });
     mocks.candidateSubjectGradeFindMany.mockResolvedValue([
-      { mark: null, status: "EXEMPT", subjectScheme: { subjectCode: "EP", nameAr: "التربية البدنية", nameFr: "Éducation physique", coefficient: 1, displayOrder: 8 } }
+      { mark: null, noteS1: null, noteS2: null, status: "EXEMPT", subjectScheme: { subjectCode: "EP", nameAr: "التربية البدنية", nameFr: "Éducation physique", coefficient: 1, displayOrder: 8 } }
     ]);
     const result = await getCandidateSubjectGrades("year-1", "00215");
     expect(result).toEqual([
-      { subjectCode: "EP", nameAr: "التربية البدنية", nameFr: "Éducation physique", coefficient: 1, mark: null, status: "EXEMPT", displayOrder: 8 }
+      { subjectCode: "EP", nameAr: "التربية البدنية", nameFr: "Éducation physique", coefficient: 1, mark: null, noteS1: null, noteS2: null, status: "EXEMPT", displayOrder: 8 }
     ]);
   });
 

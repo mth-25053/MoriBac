@@ -120,7 +120,7 @@ export async function saveGradeDryRunReport(input: {
   }, "grade-import-dry-run-save", { maxAttempts: 3, timeoutMs: 30_000 });
 }
 
-export type ImportableGradeRow = { candidateId: string; subjectSchemeId: string; mark: number | null; status: GradeStatus };
+export type ImportableGradeRow = { candidateId: string; subjectSchemeId: string; mark: number | null; status: GradeStatus; noteS1?: number | null; noteS2?: number | null };
 
 /**
  * Chunked, resumable, idempotent insert - identical contract to insertCandidates
@@ -170,7 +170,7 @@ export async function insertGradeRows(input: { batchId: string; rows: Importable
     await withDatabaseRetry(
       () => db.$transaction(async (tx) => {
         await tx.candidateSubjectGrade.createMany({
-          data: chunkRows.map((row) => ({ candidateId: row.candidateId, subjectSchemeId: row.subjectSchemeId, mark: row.mark, status: row.status, sourceBatchId: input.batchId })),
+          data: chunkRows.map((row) => ({ candidateId: row.candidateId, subjectSchemeId: row.subjectSchemeId, mark: row.mark, status: row.status, noteS1: row.noteS1 ?? null, noteS2: row.noteS2 ?? null, sourceBatchId: input.batchId })),
           skipDuplicates: true
         });
         await tx.gradeImportBatch.update({ where: { id: input.batchId }, data: { progressRows, importedRows: progressRows } });

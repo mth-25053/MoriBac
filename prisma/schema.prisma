@@ -222,6 +222,15 @@ model CandidateSubjectGrade {
    * Null exactly when status is EXEMPT - a candidate exempted from a subject (e.g. EP/Physical Education) has no numeric mark, and this is never guessed.
    */
   mark            Decimal?          @db.Decimal(5, 2)
+  /**
+   * First-/second-session marks, populated only for a complementary-session
+   * import (null for every existing normal-session row, and null for a
+   * complementary subject that wasn't retaken). `mark` above always holds the
+   * official retained grade (noteRetenue) - these two are display-only detail,
+   * never the source of truth for ranking/average calculations.
+   */
+  noteS1          Decimal?          @db.Decimal(5, 2)
+  noteS2          Decimal?          @db.Decimal(5, 2)
   status          GradeStatus       @default(GRADED)
   sourceBatchId   String?
   createdAt       DateTime          @default(now())

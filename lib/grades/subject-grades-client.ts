@@ -5,6 +5,9 @@ export type SubjectGradeRow = {
   coefficient: number | null;
   /** Null exactly when status is "EXEMPT". */
   mark: number | null;
+  /** Complementary-session detail only - undefined/null for every normal-session row. */
+  noteS1?: number | null;
+  noteS2?: number | null;
   status: "GRADED" | "EXEMPT";
   displayOrder: number;
 };

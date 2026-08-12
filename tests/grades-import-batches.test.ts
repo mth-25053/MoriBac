@@ -231,8 +231,8 @@ describe("insertGradeRows", () => {
     await insertGradeRows({ batchId: "batch-1", rows: [row("c1"), exemptRow("c2")] });
     const inserted = mocks.candidateSubjectGradeCreateMany.mock.calls[0][0].data;
     expect(inserted).toEqual([
-      { candidateId: "c1", subjectSchemeId: "scheme-1", mark: 12, status: "GRADED", sourceBatchId: "batch-1" },
-      { candidateId: "c2", subjectSchemeId: "scheme-1", mark: null, status: "EXEMPT", sourceBatchId: "batch-1" }
+      { candidateId: "c1", subjectSchemeId: "scheme-1", mark: 12, status: "GRADED", noteS1: null, noteS2: null, sourceBatchId: "batch-1" },
+      { candidateId: "c2", subjectSchemeId: "scheme-1", mark: null, status: "EXEMPT", noteS1: null, noteS2: null, sourceBatchId: "batch-1" }
     ]);
   });
 });
