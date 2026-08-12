@@ -707,6 +707,56 @@ Committed and pushed to `main` (git-linked Vercel auto-deploy), same workflow as
 
 ---
 
+## BAC 2026 complementary session — subject-grade detail (S1/S2/retained) imported and live — 2026-08-12
+
+Following the DEC complementary-session investigation (which confirmed `GET https://dec.education.gov.mr/_api/session-bac/{numDossier}` as the live source, with `noteS1`/`noteS2`/`noteRetenue` semantics verified arithmetically against real data, not assumed), the operator approved implementation. Full pipeline executed end-to-end: schema → seed → extract → validate → import → UI/API → deploy → live verification.
+
+### Schema change (additive, applied to production)
+
+Migration `20260812195700_add_grade_session_notes`: adds two nullable columns to `CandidateSubjectGrade` — `noteS1`, `noteS2` (`Decimal(5,2)?`). `mark` continues to hold the official retained grade (unchanged meaning for every existing normal-session row, which now simply has `noteS1: null, noteS2: null` alongside its existing single `mark`). Verified purely additive via `prisma migrate diff` before applying; full pre-migration backup taken (same method as every prior phase, `C:\Projets\MthBac-db-backups\`). Also extended the shared, tested `insertGradeRows()`/`ImportableGradeRow` (used by both this import and the existing admin grade-import UI) to optionally carry `noteS1`/`noteS2` — backward compatible, since they default to `null`.
+
+### SubjectScheme seeded for COMPLEMENTAIRE
+
+Copied all 63 rows from normal-2026's confirmed `SubjectScheme` (same `examType`, `series`, `subjectCode`, `nameAr`, `nameFr`, `coefficient`, `displayOrder`) to the `COMPLEMENTAIRE` `examYearId`. Normal-2026's own 63 rows unchanged.
+
+### Extraction
+
+`GET /_api/session-bac/{numDossier}` for all 6,639 known complementary candidate numbers (never enumerated — read directly from our own `Candidate` table). Concurrency 3, 250ms delay, retry/backoff on 429/5xx, resumable via a local progress file. Result: **6,639/6,639 fetched, 0 failed, 0 not-found**. Sensitive DEC fields (`nni`, `dateNaiss`, `lieuNaiss*`, `numAnonymat`, `groupeAnonymat`, `centre*`, `ecole*`, `observation`) were stripped **in memory, immediately on receipt** — never written to disk, never logged. Raw output lived only in a scratch directory outside this git repo and was deleted after use; nothing DEC-sourced was ever committed.
+
+### Subject-name mapping
+
+DEC's `session-bac` rows carry full subject names (`nomMatiereA`/`nomMatiereF`), not short codes. Verified via a 7-candidate sample (one per series) against the confirmed `SubjectScheme.nameAr`: **61/63 matched exactly** (name + coefficient). The 2 remaining were confirmed, not guessed, via series+coefficient cross-check: DEC's `"التكنلوجيا و الآلية"` (TM) is a spelling variant of the existing `TA` code's `"التكنولوجيا والآلية"`, and DEC's TS row with `nomMatiereA: null` / `nomMatiereF: "Mesure Essais"` matches the existing `ME` code (`"القياس والاختبارات"`) — both coefficients matched exactly, confirming identity.
+
+### EP-exemption sentinel discovered during validation (real finding, not a bug in the importer)
+
+Initial dry-run rejected 1,307 candidates for `"INVALID_RETENUE:EP:-1"`. Investigated rather than special-cased blindly: DEC encodes an EP (Physical Education) exemption as `noteS1: -1, noteS2: null, noteRetenue: -1` for that subject only — confirmed by reproducing the candidate's published `moyenne` via weighted average with EP's coefficient excluded (exact match to many decimal places). Scanned the **entire** 6,639-candidate dataset: `-1` appears **only** on `Education Physique(s)` rows, nowhere else (2,614 occurrences = exactly 1,307 candidates × 2 fields, `noteS1` and `noteRetenue`). Handled as `status: EXEMPT, mark: null` (same convention already used for normal-session EP exemptions) — `-1` is never stored anywhere.
+
+### Validation (dry-run, zero writes)
+
+After the EP-sentinel fix: **6,639/6,639 candidates validated cleanly, 0 skipped.** Every check requested was applied per candidate (numDossier match, series match, decision cross-check via `classifyDecision`, average cross-check within 0.02 tolerance, subject-name→code resolution, coefficient match, duplicate-subject detection, mark range/logic check) — any single failure would skip that whole candidate (none did). Reused the existing, tested `validateGradeRows()` library (`lib/grades/validate.ts`) via in-memory lookups scoped to the `COMPLEMENTAIRE` `examYearId` — zero interaction with normal-session lookups. Result: **53,278 importable rows**, 0 unmatched/seriesMismatch/duplicateInputRows/unknownSubjectCodes/malformedMarks/incompleteSubjectSets/unexpectedSubjectSets.
+
+### Import
+
+Committed via the existing `saveGradeDryRunReport()`/`insertGradeRows()` pipeline (`GradeImportBatch` id `cmsqizfdo0001uol4chwyvyri`, `sourceType: JSON`, status `IMPORTED`). **53,278 `CandidateSubjectGrade` rows inserted**, scoped to the `COMPLEMENTAIRE` `examYearId` only. Post-import verification: normal-2026 grade count unchanged at exactly 516,956; total now 570,234 (516,956 + 53,278); all 4 spot-checked candidates' grade sets reproduce their published `Candidate.average` via weighted recomputation (differences only in the 3rd/4th decimal, expected from stored 2-dp rounding).
+
+### UI/API (additive, self-detecting)
+
+- `lib/grades/public-grades.ts` / `/api/public/candidate-grades`: now also select/return `noteS1`/`noteS2` per subject (`null` for every normal-session row, unchanged shape otherwise).
+- `components/subject-grades-section.tsx`: detects a complementary-session grade set by the presence of a non-null `noteS1` on any returned row (no extra prop threaded through `ResultCard`) and switches from the existing single-mark list to a 5-column table (subject / coefficient / الدورة الأولى / الدورة الثانية / النتيجة المعتبرة), with the section title switching to "نتائج المواد — الدورة التكميلية" ("Résultats par matière — Session complémentaire"). Normal-session results keep the exact prior single-column layout, automatically, since they never carry `noteS1`.
+- `npm run typecheck`, `eslint --max-warnings=0`, `test` (203/203, two fixtures updated for the new fields), `build` all clean before deploying.
+
+### Live verification (production)
+
+All 4 requested candidates confirmed via the live `/api/public/candidate-grades` endpoint: correct subject list, correct coefficients, `mark` = `max(noteS1, noteS2)` where both present (else whichever is non-null), `noteS2: null` correctly shown for non-retaken subjects, EP exemption correctly present for candidates who have it. Cross-checked at the DB level (not just via the currently-published-only public API) that normal-2026 candidate 15049's grade rows are byte-for-byte unchanged (8 rows, 0 with a non-null `noteS1`) and that normal-2026's totals (64,532 candidates / 516,956 grades) exactly match every prior baseline in this document.
+
+**Note on public reachability**: normal BAC 2026 remains unpublished per the still-in-effect "complementary session is the only public edition" decision from the prior phase (unrelated to this one) — a normal-only candidate correctly returns "not found" via the public API right now. This is expected, pre-existing, and reversible via the same publish/unpublish mechanism whenever the operator decides to bring normal 2026 back alongside complementary.
+
+### Deployed
+
+Committed and pushed to `main` (git-linked Vercel auto-deploy). Live and verified as of this phase.
+
+---
+
 ## Standing rules for whoever continues this work
 
 - Never guess or invent academic data (subject names, coefficients, display order, any official BAC rule). If something can't be confirmed from an authoritative source, stop and ask.
