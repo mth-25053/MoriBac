@@ -7,10 +7,12 @@ import { withDatabaseRetry } from "@/lib/database-retry";
 export async function getPublishedYear(requestedYear?: number) {
   return withDatabaseRetry(
     () => requestedYear
-      // A bare ?year=2026 must keep resolving to the normal session deterministically,
-      // even once a COMPLEMENTAIRE ExamYear also exists for the same year - existing
-      // public URLs/bookmarks must never silently start resolving to a different session.
-      ? db.examYear.findFirst({ where: { year: requestedYear, session: "NORMAL", isPublished: true } })
+      // The public UI's own year selector always sends an explicit ?year=, including
+      // for a plain candidate-number search - so this must resolve to whichever
+      // session is actually published for that year, not a hardcoded one. Since at
+      // most one ExamYear per year is ever published at a time (the operator-controlled
+      // publish/unpublish switch enforces that), this stays unambiguous by construction.
+      ? db.examYear.findFirst({ where: { year: requestedYear, isPublished: true } })
       // No explicit year: follow whichever published ExamYear is currently marked
       // default, regardless of session - this is the operator-controlled "primary
       // edition" switch (e.g. complementary session temporarily set as default).
@@ -301,14 +303,14 @@ export async function getHomeInitialData(requestedYear?: number) {
   ]);
   const noticeMap = Object.fromEntries(noticeSettings.map((setting) => [setting.key, setting.value]));
   const notices = { ar: noticeMap.siteNoticeAr ?? "", fr: noticeMap.siteNoticeFr ?? "" };
-  if (!year) return { year: null, years, notices, options: { series: [], wilayas: [], centers: [], schools: [] }, rankings: null };
+  if (!year) return { year: null, session: null, years, notices, options: { series: [], wilayas: [], centers: [], schools: [] }, rankings: null };
 
   const emptyFilters = { series: "", wilaya: "", center: "", school: "", sort: "highest", page: 1 };
   const [options, rankings] = await Promise.all([
     getFilterOptionsCached(year.id, {}),
     browseResultsCached(year.id, emptyFilters)
   ]);
-  return { year: year.year, years, notices, options, rankings };
+  return { year: year.year, session: year.session, years, notices, options, rankings };
 }
 
 export async function getRosterInitialData(kind: "school" | "center", name: string, filters: { year?: number; wilaya: string; series: string }) {

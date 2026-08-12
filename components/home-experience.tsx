@@ -10,7 +10,7 @@ import { RecentSearches } from "@/components/recent-searches";
 import type { FilterOptions, RankingsResponse } from "@/components/rankings/types";
 import { clearRecentSearches, loadRecentSearches, saveRecentSearch, type RecentSearch } from "@/lib/recent-searches";
 
-type Meta = { year: number | null; notices: { ar: string; fr: string }; years: { year: number; isDefault: boolean }[]; options: FilterOptions };
+type Meta = { year: number | null; session?: "NORMAL" | "COMPLEMENTAIRE" | null; notices: { ar: string; fr: string }; years: { year: number; isDefault: boolean }[]; options: FilterOptions };
 type NameMatch = { candidateNumber: string; fullName: string; series: string; average: number; decision: string; wilaya: string | null; examCenter: string | null; school: string | null };
 
 const NUMBER_SEARCH_CACHE_LIMIT = 20;
@@ -223,6 +223,7 @@ export function HomeExperience({
   return <>
     <section className="shell flex flex-col items-center pb-6 pt-14 text-center sm:pb-8 sm:pt-20">
       <span className="grid size-16 place-items-center rounded-2xl text-white" style={{ background: "var(--accent)" }}><GraduationCap size={32} /></span>
+      {meta?.session === "COMPLEMENTAIRE" && <div className="mb-4 rounded-xl px-4 py-2 text-sm font-black" style={{ background: "var(--accent)", color: "white" }} role="status">{dict.complementarySessionBanner}</div>}
       <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">{dict.brand}</h1>
       <p className="mt-1.5 text-xs font-bold" style={{ fontFamily: "var(--font-arabic)", color: "var(--muted)" }} dir="rtl" lang="ar">{dict.designCredit}</p>
       <p className="muted mt-5 max-w-lg text-base leading-7 sm:text-lg">{dict.heroText}</p>
