@@ -298,19 +298,19 @@ export const browseResultsCached = unstable_cache(
 export async function getHomeInitialData(requestedYear?: number) {
   const [year, years, noticeSettings] = await Promise.all([
     getPublishedYearCached(requestedYear),
-    db.examYear.findMany({ where: { isPublished: true }, orderBy: { year: "desc" }, select: { year: true, isDefault: true } }),
+    db.examYear.findMany({ where: { isPublished: true }, orderBy: { year: "desc" }, select: { year: true, session: true, isDefault: true, labelAr: true, labelFr: true } }),
     db.setting.findMany({ where: { key: { in: ["siteNoticeAr", "siteNoticeFr"] } }, select: { key: true, value: true } })
   ]);
   const noticeMap = Object.fromEntries(noticeSettings.map((setting) => [setting.key, setting.value]));
   const notices = { ar: noticeMap.siteNoticeAr ?? "", fr: noticeMap.siteNoticeFr ?? "" };
-  if (!year) return { year: null, session: null, years, notices, options: { series: [], wilayas: [], centers: [], schools: [] }, rankings: null };
+  if (!year) return { year: null, session: null, labelAr: null, labelFr: null, years, notices, options: { series: [], wilayas: [], centers: [], schools: [] }, rankings: null };
 
   const emptyFilters = { series: "", wilaya: "", center: "", school: "", sort: "highest", page: 1 };
   const [options, rankings] = await Promise.all([
     getFilterOptionsCached(year.id, {}),
     browseResultsCached(year.id, emptyFilters)
   ]);
-  return { year: year.year, session: year.session, years, notices, options, rankings };
+  return { year: year.year, session: year.session, labelAr: year.labelAr, labelFr: year.labelFr, years, notices, options, rankings };
 }
 
 export async function getRosterInitialData(kind: "school" | "center", name: string, filters: { year?: number; wilaya: string; series: string }) {
@@ -324,5 +324,5 @@ export async function getRosterInitialData(kind: "school" | "center", name: stri
     sort: "highest",
     page: 1
   });
-  return { year: year.year, ...data };
+  return { year: year.year, labelAr: year.labelAr, labelFr: year.labelFr, ...data };
 }

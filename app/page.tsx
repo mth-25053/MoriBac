@@ -16,7 +16,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <HomeExperience
         dict={dict}
         locale={locale}
-        initialMeta={initial ? { year: initial.year, session: initial.session, notices: initial.notices, years: initial.years, options: initial.options } : null}
+        initialMeta={initial ? { year: initial.year, session: initial.session, labelAr: initial.labelAr, labelFr: initial.labelFr, notices: initial.notices, years: initial.years, options: initial.options } : null}
         initialRankings={initial?.rankings ?? null}
       />
     </main>

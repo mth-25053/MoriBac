@@ -8,7 +8,14 @@ import { authorizeMutation, apiError } from "@/lib/http";
 import { logRequest, logRequestError, requestId } from "@/lib/request-log";
 import { clientIp } from "@/lib/security";
 
-const actionSchema = z.object({ action: z.enum(["publish", "hide", "default"]) }).strict();
+const actionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.enum(["publish", "hide", "default"]) }).strict(),
+  z.object({
+    action: z.literal("label"),
+    labelAr: z.string().trim().max(200).nullable(),
+    labelFr: z.string().trim().max(200).nullable()
+  }).strict()
+]);
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const reqId = requestId(request);
@@ -21,13 +28,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const year = await db.examYear.findUnique({ where: { id }, include: { _count: { select: { candidates: true } } } });
     if (!year) return apiError("YEAR_NOT_FOUND", 404);
     if ((parsed.data.action === "publish" || parsed.data.action === "default") && year._count.candidates === 0) return apiError("EMPTY_YEAR", 409);
-    const previousValue = { isPublished: year.isPublished, isDefault: year.isDefault };
+    const previousValue = parsed.data.action === "label"
+      ? { labelAr: year.labelAr, labelFr: year.labelFr }
+      : { isPublished: year.isPublished, isDefault: year.isDefault };
     if (parsed.data.action === "publish") await db.examYear.update({ where: { id }, data: { isPublished: true } });
     if (parsed.data.action === "hide") await db.examYear.update({ where: { id }, data: { isPublished: false, isDefault: false } });
     if (parsed.data.action === "default") await db.$transaction([
       db.examYear.updateMany({ where: { isDefault: true }, data: { isDefault: false } }),
       db.examYear.update({ where: { id }, data: { isDefault: true, isPublished: true } })
     ]);
+    // Label-only edit: touches nothing but the two display-name fields - never
+    // publication state, default state, session, or any candidate/import data.
+    if (parsed.data.action === "label") await db.examYear.update({
+      where: { id },
+      data: { labelAr: parsed.data.labelAr || null, labelFr: parsed.data.labelFr || null }
+    });
     revalidateTag("published-year", "default");
     revalidateTag("filter-options", "default");
     await recordAudit({
@@ -36,7 +51,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       targetType: "ExamYear",
       targetId: id,
       previousValue,
-      newValue: { action: parsed.data.action },
+      newValue: parsed.data.action === "label" ? { labelAr: parsed.data.labelAr, labelFr: parsed.data.labelFr } : { action: parsed.data.action },
       ip: clientIp(request)
     });
     logRequest(reqId, "year-update", "year-action-applied", { route: "year-update", adminId: auth.session.adminId, year: year.year, action: parsed.data.action });

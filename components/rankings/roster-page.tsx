@@ -15,6 +15,7 @@ export function RosterPage({
   wilaya,
   series,
   year,
+  yearLabel,
   initialCandidates,
   initialPageCount,
   initialStatistics
@@ -25,6 +26,7 @@ export function RosterPage({
   wilaya: string;
   series: string;
   year: number;
+  yearLabel?: string | null;
   initialCandidates: RankingCandidate[];
   initialPageCount: number;
   initialStatistics: RankingStatistics | null;
@@ -100,7 +102,7 @@ export function RosterPage({
       <div className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm font-bold">
         <span className="muted flex items-center gap-1.5"><MapPin size={15} /><bdi>{wilaya || dict.allWilayas}</bdi></span>
         <span className="muted flex items-center gap-1.5"><Award size={15} /><bdi>{series || dict.allSeries}</bdi></span>
-        <span className="muted flex items-center gap-1.5" dir="ltr"><CalendarDays size={15} />BAC {year}</span>
+        <span className="muted flex items-center gap-1.5" dir="ltr"><CalendarDays size={15} />{yearLabel || `BAC ${year}`}</span>
       </div>
     </div>
 

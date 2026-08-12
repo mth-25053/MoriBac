@@ -1,13 +1,13 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import type { Dictionary } from "@/lib/i18n";
+import type { Dictionary, Locale } from "@/lib/i18n";
 import { RankingsFilters } from "@/components/rankings/rankings-filters";
 import { RankingsPodium } from "@/components/rankings/rankings-hero";
 import { RankingsList } from "@/components/rankings/rankings-list";
 import type { FilterOptions, RankingsResponse } from "@/components/rankings/types";
 
-type YearOption = { year: number; isDefault: boolean };
+type YearOption = { year: number; isDefault: boolean; labelAr?: string | null; labelFr?: string | null };
 
 function Skeleton() {
   return <div className="mt-10 space-y-4">
@@ -18,6 +18,7 @@ function Skeleton() {
 
 export function RankingsSection({
   dict,
+  locale,
   initialYear,
   years,
   initialOptions,
@@ -25,6 +26,7 @@ export function RankingsSection({
   onSelectCandidate
 }: {
   dict: Dictionary;
+  locale: Locale;
   initialYear: number;
   years: YearOption[];
   initialOptions: FilterOptions;
@@ -148,6 +150,7 @@ export function RankingsSection({
 
     <RankingsFilters
       dict={dict}
+      locale={locale}
       years={years}
       year={year}
       series={series}

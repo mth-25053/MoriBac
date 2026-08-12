@@ -82,6 +82,13 @@ model ExamYear {
   id                 String             @id @default(cuid())
   year               Int
   session            ExamSession        @default(NORMAL)
+  /**
+   * Operator-editable public display name for this edition (e.g. "BAC 2026 -
+   * الدورة التكميلية"). Null means "no custom label yet" - callers fall back
+   * to a plain "BAC {year}" rendering, never a guessed/hardcoded session name.
+   */
+  labelAr            String?
+  labelFr            String?
   isPublished        Boolean            @default(false)
   isDefault          Boolean            @default(false)
   createdAt          DateTime           @default(now())

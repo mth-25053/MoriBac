@@ -10,10 +10,28 @@ import { RecentSearches } from "@/components/recent-searches";
 import type { FilterOptions, RankingsResponse } from "@/components/rankings/types";
 import { clearRecentSearches, loadRecentSearches, saveRecentSearch, type RecentSearch } from "@/lib/recent-searches";
 
-type Meta = { year: number | null; session?: "NORMAL" | "COMPLEMENTAIRE" | null; notices: { ar: string; fr: string }; years: { year: number; isDefault: boolean }[]; options: FilterOptions };
+type Meta = {
+  year: number | null;
+  session?: "NORMAL" | "COMPLEMENTAIRE" | null;
+  labelAr?: string | null;
+  labelFr?: string | null;
+  notices: { ar: string; fr: string };
+  years: { year: number; isDefault: boolean; labelAr?: string | null; labelFr?: string | null }[];
+  options: FilterOptions;
+};
 type NameMatch = { candidateNumber: string; fullName: string; series: string; average: number; decision: string; wilaya: string | null; examCenter: string | null; school: string | null };
 
 const NUMBER_SEARCH_CACHE_LIMIT = 20;
+
+/**
+ * Locale-resolved edition label for the currently resolved published year -
+ * never hardcoded here. Returns "" (renders nothing) when the operator hasn't
+ * set a custom label for this edition yet, rather than inventing one.
+ */
+function editionLabel(meta: Meta | null, locale: Locale) {
+  if (!meta) return "";
+  return (locale === "ar" ? meta.labelAr : meta.labelFr) || "";
+}
 
 export function HomeExperience({
   dict,
@@ -223,7 +241,7 @@ export function HomeExperience({
   return <>
     <section className="shell flex flex-col items-center pb-6 pt-14 text-center sm:pb-8 sm:pt-20">
       <span className="grid size-16 place-items-center rounded-2xl text-white" style={{ background: "var(--accent)" }}><GraduationCap size={32} /></span>
-      {meta?.session === "COMPLEMENTAIRE" && <div className="mb-4 rounded-xl px-4 py-2 text-sm font-black" style={{ background: "var(--accent)", color: "white" }} role="status">{dict.complementarySessionBanner}</div>}
+      {editionLabel(meta, locale) && <div className="mb-4 rounded-xl px-4 py-2 text-sm font-black" style={{ background: "var(--accent)", color: "white" }} role="status">{editionLabel(meta, locale)}</div>}
       <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">{dict.brand}</h1>
       <p className="mt-1.5 text-xs font-bold" style={{ fontFamily: "var(--font-arabic)", color: "var(--muted)" }} dir="rtl" lang="ar">{dict.designCredit}</p>
       <p className="muted mt-5 max-w-lg text-base leading-7 sm:text-lg">{dict.heroText}</p>
@@ -233,7 +251,7 @@ export function HomeExperience({
       {!candidate && <div className="surface mt-10 w-full max-w-xl p-6 sm:p-8">
         {meta && meta.years.length > 1 && <div className="mb-5 flex justify-center">
           <select aria-label={dict.publishedYear} className="field !w-auto !min-h-10 !py-1" value={year} onChange={(event) => { setYear(event.target.value); setSearchError(""); }}>
-            {meta.years.map((y) => <option key={y.year} value={y.year}>BAC {y.year}</option>)}
+            {meta.years.map((y) => <option key={y.year} value={y.year}>{(locale === "ar" ? y.labelAr : y.labelFr) || `BAC ${y.year}`}</option>)}
           </select>
         </div>}
 
@@ -320,6 +338,6 @@ export function HomeExperience({
       <div className="mt-6 text-center"><button className="button secondary" onClick={reset}>{dict.searchAgain}</button></div>
     </section>}
 
-    {meta?.year && <RankingsSection dict={dict} initialYear={meta.year} years={meta.years} initialOptions={meta.options} initialData={meta.year === initialMeta?.year ? initialRankings : null} onSelectCandidate={openCandidate} />}
+    {meta?.year && <RankingsSection dict={dict} locale={locale} initialYear={meta.year} years={meta.years} initialOptions={meta.options} initialData={meta.year === initialMeta?.year ? initialRankings : null} onSelectCandidate={openCandidate} />}
   </>;
 }

@@ -1,14 +1,15 @@
 import { RotateCcw } from "lucide-react";
-import type { Dictionary } from "@/lib/i18n";
+import type { Dictionary, Locale } from "@/lib/i18n";
 import { ChipRow, ChipRowSkeleton } from "@/components/rankings/chip-row";
 import { FilterableList } from "@/components/rankings/filterable-list";
 import { WilayaSelect } from "@/components/rankings/wilaya-select";
 import type { FilterOptions } from "@/components/rankings/types";
 
-type YearOption = { year: number; isDefault: boolean };
+type YearOption = { year: number; isDefault: boolean; labelAr?: string | null; labelFr?: string | null };
 
 export function RankingsFilters({
   dict,
+  locale,
   years,
   year,
   series,
@@ -28,6 +29,7 @@ export function RankingsFilters({
   onReset
 }: {
   dict: Dictionary;
+  locale: Locale;
   years: YearOption[];
   year: number;
   series: string;
@@ -51,7 +53,7 @@ export function RankingsFilters({
       {years.length > 1 && <label className="flex items-center gap-2">
         <span className="label !mb-0">{dict.publishedYear}</span>
         <select className="field !w-auto !min-h-10 !py-1" value={year} onChange={(event) => onYear(Number(event.target.value))}>
-          {years.map((item) => <option key={item.year} value={item.year}>BAC {item.year}</option>)}
+          {years.map((item) => <option key={item.year} value={item.year}>{(locale === "ar" ? item.labelAr : item.labelFr) || `BAC ${item.year}`}</option>)}
         </select>
       </label>}
       {hasActiveFilters && <button type="button" className="icon-button" onClick={onReset} aria-label={dict.resetFilters} title={dict.resetFilters}><RotateCcw size={17} /></button>}

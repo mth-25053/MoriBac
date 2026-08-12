@@ -42,6 +42,7 @@ export default async function SchoolPage({
           wilaya={wilaya}
           series={series}
           year={initial.year}
+          yearLabel={(locale === "ar" ? initial.labelAr : initial.labelFr) || null}
           initialCandidates={initial.candidates}
           initialPageCount={initial.pageCount}
           initialStatistics={initial.statistics}
