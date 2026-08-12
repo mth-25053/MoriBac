@@ -757,9 +757,49 @@ Committed and pushed to `main` (git-linked Vercel auto-deploy). Live and verifie
 
 ---
 
+## Editable per-edition public labels (removed hardcoded complementary banner text) — 2026-08-12
+
+**Objective**: every `ExamYear` (year + session) gets its own operator-editable public display name, so the site never again hardcodes session text like "الدورة التكميلية" in code.
+
+### Schema change (additive, applied to production)
+
+Migration `20260812232900_add_examyear_labels`: adds `ExamYear.labelAr`, `ExamYear.labelFr` (`String?`, nullable). `null` means "no custom label set" — every public renderer falls back to a plain `"BAC {year}"` string, never a guess. Backup taken first (`C:\Projets\MthBac-db-backups\`, same method as every prior phase); migration verified purely additive via `prisma migrate diff` before applying.
+
+### Admin
+
+`Admin → Results` (`components/admin/results-manager.tsx`): each edition card now has a small label-edit form (Arabic input, French input, save button) below the existing publish/hide/make-default/delete controls. Backed by a new `action: "label"` branch on the existing `PATCH /api/admin/years/[id]` route — updates **only** `labelAr`/`labelFr`, never touches `isPublished`/`isDefault`/`session`/candidate data (verified by re-reading the handler: the label branch is a separate `if` from the publish/hide/default branches, sharing nothing but the audit-log call).
+
+### Public surfaces now driven by the stored label (fallback to `"BAC {year}"` when unset)
+
+- Homepage banner (`components/home-experience.tsx`) — was hardcoded to only appear for `session === "COMPLEMENTAIRE"` with fixed text; now shows whenever the resolved edition has a locale-matching label, regardless of session.
+- Main candidate-search year `<select>` (same file).
+- Rankings/browse filter year `<select>` (`components/rankings/rankings-filters.tsx`, threaded a new `locale` prop through `RankingsSection` → `RankingsFilters`).
+- School/center roster page header (`components/rankings/roster-page.tsx`, new `yearLabel` prop resolved server-side in `app/schools/[school]/page.tsx` / `app/centers/[center]/page.tsx` from `getRosterInitialData()`'s now-returned `labelAr`/`labelFr`).
+
+`lib/results.ts` (`getPublishedYear` return shape, `getHomeInitialData`, `getRosterInitialData`) and `/api/public/meta` all now select and return `labelAr`/`labelFr` alongside `session`.
+
+### Initial labels seeded (data-entry, not a code default)
+
+All 4 existing `ExamYear` rows given labels matching the operator's exact requested text: `BAC 2026 — الدورة التكميلية` / `BAC 2026 — Session complémentaire` (COMPLEMENTAIRE, currently published+default), `BAC 2026 — الدورة العادية` / `BAC 2026 — Session normale` (NORMAL, currently unpublished), and the same normale pattern for 2025 and 2024. Publish/default state for every row was read before and after seeding and confirmed unchanged — this was a pure metadata write.
+
+### A caching gotcha worth remembering for next time
+
+Seeding the labels via a direct database script (no authenticated admin session available in this environment) bypasses the admin route's `revalidateTag("published-year")` call, same as the complementary-session publish earlier in this document. **Redeploying does not flush this cache** — `unstable_cache`'s backing store on Vercel persists across deployments; an empty-commit redeploy was tried and did not help. What actually resolves it is the real `revalidate: 300` TTL elapsing (confirmed empirically: the correct labels appeared naturally after roughly a minute of polling, well under 300s from when the direct DB write happened, not from the redeploy). **For any future direct-DB metadata change that must show up on the public site immediately**: either accept the up-to-5-minute TTL, or make the change through the real authenticated admin route (which calls `revalidateTag` itself) instead of a script.
+
+### Verification performed
+
+`typecheck`, `eslint --max-warnings=0`, `test` (203/203, no fixtures needed changes), `build` all clean. Live: `/api/public/meta` returns the correct `labelAr`/`labelFr` at both the top level and per-entry in `years`; homepage HTML contains the full label text `"BAC 2026 — الدورة التكميلية"`; a known complementary candidate (31273) still returns its correct, unchanged average/decision, confirming the label change touched no candidate/result data.
+
+### Deployed
+
+Committed and pushed to `main` (git-linked Vercel auto-deploy). Live and verified.
+
+---
+
 ## Standing rules for whoever continues this work
 
 - Never guess or invent academic data (subject names, coefficients, display order, any official BAC rule). If something can't be confirmed from an authoritative source, stop and ask.
 - Never apply migrations, seed, import grades, or deploy without explicit operator approval, one step at a time.
 - Never put database credentials, connection strings, or candidate PII into a committed file. Backups and raw extracted datasets belong outside this git repository.
+- Direct-database metadata writes (bypassing the admin UI) do not immediately show up publicly — `unstable_cache`'s data cache survives redeploys; only its ~5-minute TTL or a real `revalidateTag` call (via the authenticated admin route) clears it.
 - This file should be updated (not left stale) as soon as the next phase completes.
