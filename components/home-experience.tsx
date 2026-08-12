@@ -23,16 +23,6 @@ type NameMatch = { candidateNumber: string; fullName: string; series: string; av
 
 const NUMBER_SEARCH_CACHE_LIMIT = 20;
 
-/**
- * Locale-resolved edition label for the currently resolved published year -
- * never hardcoded here. Returns "" (renders nothing) when the operator hasn't
- * set a custom label for this edition yet, rather than inventing one.
- */
-function editionLabel(meta: Meta | null, locale: Locale) {
-  if (!meta) return "";
-  return (locale === "ar" ? meta.labelAr : meta.labelFr) || "";
-}
-
 export function HomeExperience({
   dict,
   locale,
@@ -241,7 +231,6 @@ export function HomeExperience({
   return <>
     <section className="shell flex flex-col items-center pb-6 pt-14 text-center sm:pb-8 sm:pt-20">
       <span className="grid size-16 place-items-center rounded-2xl text-white" style={{ background: "var(--accent)" }}><GraduationCap size={32} /></span>
-      {editionLabel(meta, locale) && <div className="mb-4 rounded-xl px-4 py-2 text-sm font-black" style={{ background: "var(--accent)", color: "white" }} role="status">{editionLabel(meta, locale)}</div>}
       <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">{dict.brand}</h1>
       <p className="mt-1.5 text-xs font-bold" style={{ fontFamily: "var(--font-arabic)", color: "var(--muted)" }} dir="rtl" lang="ar">{dict.designCredit}</p>
       <p className="muted mt-5 max-w-lg text-base leading-7 sm:text-lg">{dict.heroText}</p>
