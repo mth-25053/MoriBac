@@ -796,10 +796,50 @@ Committed and pushed to `main` (git-linked Vercel auto-deploy). Live and verifie
 
 ---
 
+## Public edition selection fixed: identified by (year, session), never year alone — 2026-08-15/16
+
+### Root cause
+
+Once the operator could publish more than one session for the same year simultaneously (e.g. BAC 2026 NORMAL and COMPLEMENTAIRE both `isPublished: true` at once), every public route/URL/client state that carried only a bare `year` int (`?year=2026`) became genuinely ambiguous: `getPublishedYear()` resolved `WHERE year = 2026 AND isPublished = true` with no tiebreak between two *different* `ExamYear` rows (different `examYearId`, different candidates, different grades). The admin UI never actually enforced "at most one session per year published" as an invariant — it was just true by coincidence until the operator published a second 2026 edition.
+
+### Fix
+
+`ExamYear`'s own existing `@@unique([year, session])` key is now the canonical public identifier — **no schema change**, this constraint already existed. Every public entry point now carries an explicit `session` (`NORMAL` | `COMPLEMENTAIRE`) alongside `year`:
+
+- `lib/results.ts`: `getPublishedYear(requestedYear?, requestedSession?)` resolves by the exact `(year, session)` pair whenever `session` is supplied — fully deterministic, since that's the DB's own unique key. A bare `?year=` with no session (legacy links) falls back to `isDefault` first, then a stable order — never an arbitrary/unordered match.
+- Public API routes updated to accept `&session=`: `/api/public/{search, search-name, meta, results, candidate-grades, candidate-result-pdf}`. `examSessionSchema` added to `lib/validation.ts` for consistent parsing/validation across all of them.
+- New shared helper `lib/edition.ts` (`editionKey`/`parseEditionKey`): every client component that has its own year selector (`home-experience.tsx`, `rankings-section.tsx`/`rankings-filters.tsx`) now stores a single composite `"{year}:{session}"` string as its selection state instead of a bare year, used as both the `<select>` value and the React list key (two options can now legitimately share the same `year`, which would have been a duplicate-key bug otherwise).
+- Threaded through every consumer: candidate-number search, name search, `ResultCard` → `ShareButton`/`DownloadResultPdfButton`/`SubjectGradesSection`, `RankingsSection`/rankings filters, and the school/center roster pages (`getRosterInitialData` now takes `session`, roster pages read `?session=` from their URL).
+- `lib/recent-searches.ts`: `RecentSearch` gained an optional `session` field, deduped by number+year+session (not just number+year), so reopening a recent search reopens the exact edition it was found in.
+- Downstream data queries (candidate lookup, ranks, grades, browse/rankings) were **already** scoped by `examYearId` (never by bare `year`) — this fix closes the one remaining ambiguity at the *resolution* step (URL/param → `examYearId`), without touching how candidate/grade/ranking data itself is stored, queried, or computed.
+
+### What did NOT change
+
+No candidate data, averages, decisions, subject grades, or rankings were touched. No migration. No publish/default state changed by this fix itself.
+
+### Verification performed
+
+`typecheck`, `eslint --max-warnings=0`, `test` (203/203, no fixtures needed changes), `build` all clean. Live, against production:
+- `getPublishedYear(2026, "NORMAL")` and `getPublishedYear(2026, "COMPLEMENTAIRE")` resolve to their correct, distinct `examYearId`s when queried directly.
+- Explicit `?number=X&year=2026&session=NORMAL` search returns the correct normal-session record; the same candidate number queried explicitly under `session=NORMAL` never leaks complementary-session data (confirmed with a candidate that exists in both datasets with different averages/decisions — normal-session values returned correctly and exclusively).
+- 2025 and 2024 (single-session years) continue resolving correctly, including via direct/refreshed URLs (`?year=2025`, `?year=2024` server-render the correct edition's label).
+- Complementary subject-grade data (`noteS1`/`noteS2`/retained mark) confirmed intact and correctly linked at the data level.
+
+### Honest note on live "both 2026 editions visible" verification
+
+At verification time, the operator had (independently, via the admin panel, timestamped ~14:45 UTC) set **NORMAL 2026 as published+default and COMPLEMENTAIRE 2026 as unpublished** — a legitimate publish-state decision this fix deliberately did not touch, per explicit instruction. This means the *public* selector currently shows only the 3 currently-published editions (2026 NORMAL, 2025, 2024), not both 2026 editions simultaneously — not a bug, just the current operator-chosen state. The resolution logic itself was verified directly (both `(2026, NORMAL)` and `(2026, COMPLEMENTAIRE)` resolve correctly and distinctly on request) — if the operator republishes COMPLEMENTAIRE 2026 via Admin → Results, both will appear in the selector immediately with correct, distinct labels and correct, isolated data, with no further code change needed.
+
+### Deployed
+
+Committed and pushed to `main` (git-linked Vercel auto-deploy). Live and verified.
+
+---
+
 ## Standing rules for whoever continues this work
 
 - Never guess or invent academic data (subject names, coefficients, display order, any official BAC rule). If something can't be confirmed from an authoritative source, stop and ask.
 - Never apply migrations, seed, import grades, or deploy without explicit operator approval, one step at a time.
 - Never put database credentials, connection strings, or candidate PII into a committed file. Backups and raw extracted datasets belong outside this git repository.
 - Direct-database metadata writes (bypassing the admin UI) do not immediately show up publicly — `unstable_cache`'s data cache survives redeploys; only its ~5-minute TTL or a real `revalidateTag` call (via the authenticated admin route) clears it.
+- **A public edition must always be identified by `(year, session)`, never `year` alone** — more than one session per year can be published simultaneously, and the admin UI does not prevent that. Every new public route/URL/component that deals with "which year" must also carry `session` (see `lib/edition.ts` and the phase above).
 - This file should be updated (not left stale) as soon as the next phase completes.
