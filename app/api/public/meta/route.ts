@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "INVALID_FILTERS" }, { status: 400 });
   try {
     const [year, years, noticeSettings] = await Promise.all([
-      getPublishedYearCached(parsed.data.year),
+      getPublishedYearCached(parsed.data.year, parsed.data.session),
       db.examYear.findMany({ where: { isPublished: true }, orderBy: { year: "desc" }, select: { year: true, session: true, isDefault: true, labelAr: true, labelFr: true } }),
       db.setting.findMany({ where: { key: { in: ["siteNoticeAr", "siteNoticeFr"] } }, select: { key: true, value: true } })
     ]);

@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const parsed = browseSchema.safeParse(Object.fromEntries(url.searchParams));
   if (!parsed.success) return NextResponse.json({ error: "INVALID_FILTERS" }, { status: 400 });
   try {
-    const year = await getPublishedYearCached(parsed.data.year);
+    const year = await getPublishedYearCached(parsed.data.year, parsed.data.session);
     if (!year) return NextResponse.json({ candidates: [], total: 0, pageCount: 0, statistics: null });
     const data = await browseResultsCached(year.id, parsed.data);
     return NextResponse.json(data, { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } });

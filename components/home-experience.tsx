@@ -9,6 +9,7 @@ import { RankingsSection } from "@/components/rankings/rankings-section";
 import { RecentSearches } from "@/components/recent-searches";
 import type { FilterOptions, RankingsResponse } from "@/components/rankings/types";
 import { clearRecentSearches, loadRecentSearches, saveRecentSearch, type RecentSearch } from "@/lib/recent-searches";
+import { editionKey, parseEditionKey } from "@/lib/edition";
 
 type Meta = {
   year: number | null;
@@ -16,7 +17,7 @@ type Meta = {
   labelAr?: string | null;
   labelFr?: string | null;
   notices: { ar: string; fr: string };
-  years: { year: number; isDefault: boolean; labelAr?: string | null; labelFr?: string | null }[];
+  years: { year: number; session: "NORMAL" | "COMPLEMENTAIRE"; isDefault: boolean; labelAr?: string | null; labelFr?: string | null }[];
   options: FilterOptions;
 };
 type NameMatch = { candidateNumber: string; fullName: string; series: string; average: number; decision: string; wilaya: string | null; examCenter: string | null; school: string | null };
@@ -36,7 +37,8 @@ export function HomeExperience({
 }) {
   const [mode, setMode] = useState<"number" | "name">("number");
   const [number, setNumber] = useState("");
-  const [year, setYear] = useState(initialMeta?.year ? String(initialMeta.year) : "");
+  const [edition, setEdition] = useState(editionKey(initialMeta?.year, initialMeta?.session));
+  const { year, session } = parseEditionKey(edition);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [candidate, setCandidate] = useState<CandidateView | null>(null);
@@ -57,7 +59,7 @@ export function HomeExperience({
   // instead of round-tripping to the API again. Bounded so it never grows unbounded in a
   // single long-lived tab. In-memory only (session cache) - never persisted, unlike
   // recentSearches above, which is number+year only, no result data (see lib/recent-searches.ts).
-  const numberCache = useRef<Map<string, { candidate: CandidateView | null; year: string }>>(new Map());
+  const numberCache = useRef<Map<string, { candidate: CandidateView | null; year: string; session: string }>>(new Map());
   // "number:year" of the last request that actually resolved (found or not-found) - lets the
   // auto-search effect below skip re-firing for a key it already has an answer for, while still
   // searching again the moment either the number or the selected year genuinely changes.
@@ -68,9 +70,9 @@ export function HomeExperience({
 
   useEffect(() => { setRecentSearches(loadRecentSearches()); }, []);
 
-  function selectRecentSearch(candidateNumber: string, recentYear: string) {
-    setYear(recentYear);
-    openCandidate(candidateNumber, recentYear);
+  function selectRecentSearch(candidateNumber: string, recentYear: string, recentSession?: string) {
+    setEdition(editionKey(recentYear, recentSession));
+    openCandidate(candidateNumber, editionKey(recentYear, recentSession));
   }
 
   function handleClearRecentSearches() {
@@ -78,9 +80,10 @@ export function HomeExperience({
     setRecentSearches([]);
   }
 
-  async function openCandidate(candidateNumber: string, yearOverride?: string) {
-    const useYear = yearOverride ?? year;
-    const cacheKey = `${candidateNumber}:${useYear}`;
+  async function openCandidate(candidateNumber: string, editionOverride?: string) {
+    const useEdition = editionOverride ?? edition;
+    const { year: useYear, session: useSession } = parseEditionKey(useEdition);
+    const cacheKey = `${candidateNumber}:${useEdition}`;
     if (inFlightKey.current === cacheKey) return;
 
     const cached = numberCache.current.get(cacheKey);
@@ -92,10 +95,14 @@ export function HomeExperience({
       setCandidate(cached.candidate);
       setNumber(candidateNumber);
       setMode("number");
-      if (cached.candidate) setRecentSearches(saveRecentSearch(candidateNumber, cached.year));
+      if (cached.candidate) {
+        setEdition(editionKey(cached.year, cached.session));
+        setRecentSearches(saveRecentSearch(candidateNumber, cached.year, cached.session));
+      }
       const url = new URL(window.location.href);
       url.searchParams.set("number", candidateNumber);
-      if (useYear) url.searchParams.set("year", useYear);
+      if (useYear) url.searchParams.set("year", useYear); else url.searchParams.delete("year");
+      if (useSession) url.searchParams.set("session", useSession); else url.searchParams.delete("session");
       window.history.replaceState(null, "", url);
       if (cached.candidate) requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
       return;
@@ -111,11 +118,13 @@ export function HomeExperience({
     try {
       const query = new URLSearchParams({ number: candidateNumber });
       if (useYear) query.set("year", useYear);
+      if (useSession) query.set("session", useSession);
       const response = await fetch(`/api/public/search?${query}`, { signal: controller.signal });
       const data = await response.json();
       if (!response.ok) { setSearchError(dict.serviceUnavailable); return; }
       const resolvedYear = data.year ? String(data.year) : useYear;
-      numberCache.current.set(cacheKey, { candidate: data.candidate ?? null, year: resolvedYear });
+      const resolvedSession = data.session ?? useSession;
+      numberCache.current.set(cacheKey, { candidate: data.candidate ?? null, year: resolvedYear, session: resolvedSession });
       if (numberCache.current.size > NUMBER_SEARCH_CACHE_LIMIT) {
         const oldest = numberCache.current.keys().next().value;
         if (oldest !== undefined) numberCache.current.delete(oldest);
@@ -125,10 +134,12 @@ export function HomeExperience({
       setCandidate(data.candidate);
       setNumber(candidateNumber);
       setMode("number");
-      setRecentSearches(saveRecentSearch(candidateNumber, resolvedYear));
+      setEdition(editionKey(resolvedYear, resolvedSession));
+      setRecentSearches(saveRecentSearch(candidateNumber, resolvedYear, resolvedSession));
       const url = new URL(window.location.href);
       url.searchParams.set("number", candidateNumber);
-      if (useYear) url.searchParams.set("year", useYear);
+      if (useYear) url.searchParams.set("year", useYear); else url.searchParams.delete("year");
+      if (useSession) url.searchParams.set("session", useSession); else url.searchParams.delete("session");
       window.history.replaceState(null, "", url);
       requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (error) {
@@ -145,7 +156,7 @@ export function HomeExperience({
     const urlNumber = params.get("number");
 
     if (initialMeta) {
-      if (urlNumber && /^\d+$/.test(urlNumber)) openCandidate(urlNumber, initialMeta.year ? String(initialMeta.year) : "");
+      if (urlNumber && /^\d+$/.test(urlNumber)) openCandidate(urlNumber, editionKey(initialMeta.year, initialMeta.session));
       return;
     }
 
@@ -156,9 +167,15 @@ export function HomeExperience({
         if (cancelled) return;
         setMeta(data);
         const urlYear = params.get("year");
-        const resolvedYear = urlYear && data.years.some((y) => String(y.year) === urlYear) ? urlYear : (data.year ? String(data.year) : "");
-        if (resolvedYear) setYear(resolvedYear);
-        if (urlNumber && /^\d+$/.test(urlNumber)) openCandidate(urlNumber, resolvedYear);
+        const urlSession = params.get("session");
+        // A bare ?year= with no ?session= (legacy links) only counts as a match
+        // when it's unambiguous for that year - i.e. exactly one published
+        // edition shares that year, or the requested session matches exactly.
+        const matches = urlYear ? data.years.filter((y) => String(y.year) === urlYear && (!urlSession || y.session === urlSession)) : [];
+        const resolved = matches.length === 1 ? matches[0] : (urlSession ? undefined : matches[0]);
+        const resolvedEdition = resolved ? editionKey(resolved.year, resolved.session) : editionKey(data.year, data.session);
+        if (resolvedEdition) setEdition(resolvedEdition);
+        if (urlNumber && /^\d+$/.test(urlNumber)) openCandidate(urlNumber, resolvedEdition);
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
@@ -172,11 +189,11 @@ export function HomeExperience({
     if (mode !== "number") return;
     const clean = number.trim();
     if (!clean || !/^\d+$/.test(clean)) return;
-    if (lastOpenedKey.current === `${clean}:${year}`) return;
+    if (lastOpenedKey.current === `${clean}:${edition}`) return;
     const timer = setTimeout(() => { openCandidate(clean); }, 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [number, mode, year]);
+  }, [number, mode, edition]);
 
   useEffect(() => {
     const trimmed = nameQuery.trim();
@@ -189,6 +206,7 @@ export function HomeExperience({
       setNameError("");
       const query = new URLSearchParams({ query: trimmed });
       if (year) query.set("year", year);
+      if (session) query.set("session", session);
       fetch(`/api/public/search-name?${query}`, { signal: controller.signal })
         .then((response) => (response.ok ? response.json() : Promise.reject()))
         .then((data: { candidates: NameMatch[]; hasMore: boolean }) => {
@@ -200,7 +218,7 @@ export function HomeExperience({
     }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nameQuery, year]);
+  }, [nameQuery, year, session]);
 
   async function submitNumber(event: FormEvent) {
     event.preventDefault();
@@ -239,8 +257,8 @@ export function HomeExperience({
 
       {!candidate && <div className="surface mt-10 w-full max-w-xl p-6 sm:p-8">
         {meta && meta.years.length > 1 && <div className="mb-5 flex justify-center">
-          <select aria-label={dict.publishedYear} className="field !w-auto !min-h-10 !py-1" value={year} onChange={(event) => { setYear(event.target.value); setSearchError(""); }}>
-            {meta.years.map((y) => <option key={y.year} value={y.year}>{(locale === "ar" ? y.labelAr : y.labelFr) || `BAC ${y.year}`}</option>)}
+          <select aria-label={dict.publishedYear} className="field !w-auto !min-h-10 !py-1" value={edition} onChange={(event) => { setEdition(event.target.value); setSearchError(""); }}>
+            {meta.years.map((y) => <option key={editionKey(y.year, y.session)} value={editionKey(y.year, y.session)}>{(locale === "ar" ? y.labelAr : y.labelFr) || `BAC ${y.year}`}</option>)}
           </select>
         </div>}
 
@@ -323,10 +341,10 @@ export function HomeExperience({
 
     <div ref={resultRef} />
     {candidate && meta?.year && <section className="shell mb-6 sm:mb-10">
-      <ResultCard candidate={candidate} dict={dict} locale={locale} year={Number(year) || meta.year} />
+      <ResultCard candidate={candidate} dict={dict} locale={locale} year={Number(year) || meta.year} session={session || meta.session || undefined} />
       <div className="mt-6 text-center"><button className="button secondary" onClick={reset}>{dict.searchAgain}</button></div>
     </section>}
 
-    {meta?.year && <RankingsSection dict={dict} locale={locale} initialYear={meta.year} years={meta.years} initialOptions={meta.options} initialData={meta.year === initialMeta?.year ? initialRankings : null} onSelectCandidate={openCandidate} />}
+    {meta?.year && <RankingsSection dict={dict} locale={locale} initialYear={meta.year} initialSession={meta.session ?? undefined} years={meta.years} initialOptions={meta.options} initialData={meta.year === initialMeta?.year ? initialRankings : null} onSelectCandidate={openCandidate} />}
   </>;
 }

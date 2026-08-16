@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { DECISIONS } from "@/lib/constants";
 
+/** The only two ExamSession values - kept as a literal union here (not imported from
+ * @prisma/client) so this stays a pure validation module with no Prisma dependency. */
+export const examSessionSchema = z.enum(["NORMAL", "COMPLEMENTAIRE"]).optional();
+
 export const candidateSearchSchema = z.object({
   number: z.string().trim().min(1).max(50).regex(/^\d+$/)
 });
@@ -17,7 +21,8 @@ export const browseSchema = z.object({
   name: z.string().trim().max(100).optional().default(""),
   sort: z.enum(["highest", "lowest", "name", "number"]).optional().default("highest"),
   page: z.coerce.number().int().positive().max(10000).optional().default(1),
-  year: z.coerce.number().int().min(2000).max(2100).optional()
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+  session: examSessionSchema
 });
 
 export const loginSchema = z.object({

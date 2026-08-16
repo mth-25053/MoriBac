@@ -11,7 +11,7 @@ export function RecentSearches({
 }: {
   dict: Dictionary;
   items: RecentSearch[];
-  onSelect: (candidateNumber: string, year: string) => void;
+  onSelect: (candidateNumber: string, year: string, session?: string) => void;
   onClear: () => void;
 }) {
   if (items.length === 0) return null;
@@ -25,11 +25,11 @@ export function RecentSearches({
     </div>
     <div className="chip-row mt-2" role="list" aria-label={dict.recentSearches}>
       {items.map((item) => <button
-        key={`${item.candidateNumber}:${item.year}`}
+        key={`${item.candidateNumber}:${item.year}:${item.session ?? ""}`}
         type="button"
         role="listitem"
         className="chip"
-        onClick={() => onSelect(item.candidateNumber, item.year)}
+        onClick={() => onSelect(item.candidateNumber, item.year, item.session)}
       >
         <bdi dir="ltr">{item.candidateNumber}</bdi><span className="opacity-70"> · {item.year}</span>
       </button>)}

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import type { Dictionary, Locale } from "@/lib/i18n";
 
-export function DownloadResultPdfButton({ dict, locale, candidateNumber, year }: { dict: Dictionary; locale: Locale; candidateNumber: string; year: number }) {
+export function DownloadResultPdfButton({ dict, locale, candidateNumber, year, session }: { dict: Dictionary; locale: Locale; candidateNumber: string; year: number; session?: string }) {
   const [busy, setBusy] = useState(false);
 
   async function handleDownload() {
@@ -13,6 +13,7 @@ export function DownloadResultPdfButton({ dict, locale, candidateNumber, year }:
     setBusy(true);
     try {
       const query = new URLSearchParams({ number: candidateNumber, year: String(year), locale });
+      if (session) query.set("session", session);
       const response = await fetch(`/api/public/candidate-result-pdf?${query.toString()}`);
       if (!response.ok) throw new Error("PDF_REQUEST_FAILED");
       const blob = await response.blob();

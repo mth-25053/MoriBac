@@ -1,18 +1,27 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type ExamSession } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
 import { NAME_SEARCH_LIMIT, NAME_SEARCH_MAX_WORDS, PAGE_SIZE } from "@/lib/constants";
 import { withDatabaseRetry } from "@/lib/database-retry";
 
-export async function getPublishedYear(requestedYear?: number) {
+/**
+ * The only safe unique identifiers for an edition are `examYearId` (opaque) or
+ * `(year, session)` (the DB's own unique key) - `year` alone stopped being
+ * unique the moment more than one session for the same year is published at
+ * once (e.g. BAC 2026 normal + complementary simultaneously). Every public
+ * caller that knows which edition it wants must pass `requestedSession`
+ * alongside `requestedYear`; omitting it is only safe when the caller
+ * genuinely doesn't care which edition of that year it gets (legacy bare
+ * `?year=` links), in which case the default-flagged edition for that year
+ * wins, never an arbitrary/unordered one.
+ */
+export async function getPublishedYear(requestedYear?: number, requestedSession?: ExamSession) {
   return withDatabaseRetry(
     () => requestedYear
-      // The public UI's own year selector always sends an explicit ?year=, including
-      // for a plain candidate-number search - so this must resolve to whichever
-      // session is actually published for that year, not a hardcoded one. Since at
-      // most one ExamYear per year is ever published at a time (the operator-controlled
-      // publish/unpublish switch enforces that), this stays unambiguous by construction.
-      ? db.examYear.findFirst({ where: { year: requestedYear, isPublished: true } })
+      ? db.examYear.findFirst({
+          where: { year: requestedYear, isPublished: true, ...(requestedSession ? { session: requestedSession } : {}) },
+          orderBy: [{ isDefault: "desc" }, { session: "asc" }]
+        })
       // No explicit year: follow whichever published ExamYear is currently marked
       // default, regardless of session - this is the operator-controlled "primary
       // edition" switch (e.g. complementary session temporarily set as default).
@@ -28,7 +37,7 @@ export async function getPublishedYear(requestedYear?: number) {
  * immediately instead of waiting out the TTL.
  */
 export const getPublishedYearCached = unstable_cache(
-  (requestedYear?: number) => getPublishedYear(requestedYear),
+  (requestedYear?: number, requestedSession?: ExamSession) => getPublishedYear(requestedYear, requestedSession),
   ["published-year-cache"],
   { tags: ["published-year"], revalidate: 300 }
 );
@@ -295,9 +304,9 @@ export const browseResultsCached = unstable_cache(
  * browseResultsCached) the public API routes call, so this never duplicates a live
  * database read the routes wouldn't already have served from cache.
  */
-export async function getHomeInitialData(requestedYear?: number) {
+export async function getHomeInitialData(requestedYear?: number, requestedSession?: ExamSession) {
   const [year, years, noticeSettings] = await Promise.all([
-    getPublishedYearCached(requestedYear),
+    getPublishedYearCached(requestedYear, requestedSession),
     db.examYear.findMany({ where: { isPublished: true }, orderBy: { year: "desc" }, select: { year: true, session: true, isDefault: true, labelAr: true, labelFr: true } }),
     db.setting.findMany({ where: { key: { in: ["siteNoticeAr", "siteNoticeFr"] } }, select: { key: true, value: true } })
   ]);
@@ -313,8 +322,8 @@ export async function getHomeInitialData(requestedYear?: number) {
   return { year: year.year, session: year.session, labelAr: year.labelAr, labelFr: year.labelFr, years, notices, options, rankings };
 }
 
-export async function getRosterInitialData(kind: "school" | "center", name: string, filters: { year?: number; wilaya: string; series: string }) {
-  const year = await getPublishedYearCached(filters.year);
+export async function getRosterInitialData(kind: "school" | "center", name: string, filters: { year?: number; session?: ExamSession; wilaya: string; series: string }) {
+  const year = await getPublishedYearCached(filters.year, filters.session);
   if (!year) return null;
   const data = await browseResultsCached(year.id, {
     series: filters.series,
@@ -324,5 +333,5 @@ export async function getRosterInitialData(kind: "school" | "center", name: stri
     sort: "highest",
     page: 1
   });
-  return { year: year.year, labelAr: year.labelAr, labelFr: year.labelFr, ...data };
+  return { year: year.year, session: year.session, labelAr: year.labelAr, labelFr: year.labelFr, ...data };
 }

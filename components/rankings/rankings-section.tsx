@@ -2,12 +2,13 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { Dictionary, Locale } from "@/lib/i18n";
+import { editionKey, parseEditionKey } from "@/lib/edition";
 import { RankingsFilters } from "@/components/rankings/rankings-filters";
 import { RankingsPodium } from "@/components/rankings/rankings-hero";
 import { RankingsList } from "@/components/rankings/rankings-list";
 import type { FilterOptions, RankingsResponse } from "@/components/rankings/types";
 
-type YearOption = { year: number; isDefault: boolean; labelAr?: string | null; labelFr?: string | null };
+type YearOption = { year: number; session: "NORMAL" | "COMPLEMENTAIRE"; isDefault: boolean; labelAr?: string | null; labelFr?: string | null };
 
 function Skeleton() {
   return <div className="mt-10 space-y-4">
@@ -20,6 +21,7 @@ export function RankingsSection({
   dict,
   locale,
   initialYear,
+  initialSession,
   years,
   initialOptions,
   initialData,
@@ -28,13 +30,17 @@ export function RankingsSection({
   dict: Dictionary;
   locale: Locale;
   initialYear: number;
+  initialSession?: string;
   years: YearOption[];
   initialOptions: FilterOptions;
   initialData?: RankingsResponse | null;
   onSelectCandidate: (candidateNumber: string) => void;
 }) {
   const router = useRouter();
-  const [year, setYear] = useState(initialYear);
+  const initialEdition = editionKey(initialYear, initialSession);
+  const [edition, setEdition] = useState(initialEdition);
+  const { year: yearStr, session } = parseEditionKey(edition);
+  const year = Number(yearStr) || initialYear;
   const [series, setSeries] = useState("");
   const [wilaya, setWilaya] = useState("");
   const [path, setPath] = useState<"school" | "center" | null>(null);
@@ -65,19 +71,21 @@ export function RankingsSection({
 
   const optionsAbort = useRef<AbortController | null>(null);
   // The very first run would fetch the exact same unfiltered options the parent already
-  // fetched to build `initialOptions` (same year, no series/wilaya) - skip that one redundant
-  // request and reuse what was passed in. Any later run (a real filter change) fetches as before.
+  // fetched to build `initialOptions` (same edition, no series/wilaya) - skip that one
+  // redundant request and reuse what was passed in. Any later run (a real filter change)
+  // fetches as before.
   const isFirstOptionsRun = useRef(true);
   useEffect(() => {
     if (isFirstOptionsRun.current) {
       isFirstOptionsRun.current = false;
-      if (year === initialYear && !series && !wilaya) return;
+      if (edition === initialEdition && !series && !wilaya) return;
     }
     optionsAbort.current?.abort();
     const controller = new AbortController();
     optionsAbort.current = controller;
     setOptionsLoading(true);
     const query = new URLSearchParams({ year: String(year) });
+    if (session) query.set("session", session);
     if (series) query.set("series", series);
     if (wilaya) query.set("wilaya", wilaya);
     fetch(`/api/public/meta?${query}`, { signal: controller.signal })
@@ -86,17 +94,18 @@ export function RankingsSection({
       .catch((fetchError) => { if ((fetchError as { name?: string })?.name !== "AbortError") { /* keep previous options, filters remain usable */ } })
       .finally(() => { if (optionsAbort.current === controller) setOptionsLoading(false); });
     return () => controller.abort();
-  }, [year, series, wilaya, initialYear]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edition, series, wilaya]);
 
   const resultsAbort = useRef<AbortController | null>(null);
   // Mirrors isFirstOptionsRun above: the very first run would re-fetch the exact same
   // unfiltered Top Candidates page the server already rendered into initialData - skip it
-  // and reuse what was passed in. Any later run (a real filter/year change) fetches as before.
+  // and reuse what was passed in. Any later run (a real filter/edition change) fetches as before.
   const isFirstResultsRun = useRef(true);
   useEffect(() => {
     if (isFirstResultsRun.current) {
       isFirstResultsRun.current = false;
-      if (initialData && year === initialYear && !series && !wilaya) return;
+      if (initialData && edition === initialEdition && !series && !wilaya) return;
     }
     resultsAbort.current?.abort();
     const controller = new AbortController();
@@ -104,6 +113,7 @@ export function RankingsSection({
     setLoading(true);
     setError(false);
     const query = new URLSearchParams({ year: String(year), sort: "highest", page: "1" });
+    if (session) query.set("session", session);
     if (series) query.set("series", series);
     if (wilaya) query.set("wilaya", wilaya);
     fetch(`/api/public/results?${query}`, { signal: controller.signal })
@@ -112,9 +122,10 @@ export function RankingsSection({
       .catch((fetchError) => { if ((fetchError as { name?: string })?.name !== "AbortError") setError(true); })
       .finally(() => { if (resultsAbort.current === controller) setLoading(false); });
     return () => controller.abort();
-  }, [year, series, wilaya, initialData, initialYear]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edition, series, wilaya, initialData]);
 
-  function selectYear(value: number) { setYear(value); setSeries(""); setWilaya(""); setPath(null); }
+  function selectEdition(value: string) { setEdition(value); setSeries(""); setWilaya(""); setPath(null); }
   function selectSeries(value: string) { setSeries(value); setWilaya(""); setPath(null); }
   function selectWilaya(value: string) { setWilaya(value); setPath(null); }
   function selectPath(value: "school" | "center") { setPath(value); }
@@ -122,6 +133,7 @@ export function RankingsSection({
 
   function entityHref(kind: "school" | "center", name: string) {
     const query = new URLSearchParams({ year: String(year) });
+    if (session) query.set("session", session);
     if (wilaya) query.set("wilaya", wilaya);
     if (series) query.set("series", series);
     return `/${kind === "school" ? "schools" : "centers"}/${encodeURIComponent(name)}?${query.toString()}`;
@@ -152,14 +164,14 @@ export function RankingsSection({
       dict={dict}
       locale={locale}
       years={years}
-      year={year}
+      edition={edition}
       series={series}
       wilaya={wilaya}
       path={path}
       options={options}
       optionsLoading={optionsLoading}
       hasActiveFilters={Boolean(series || wilaya)}
-      onYear={selectYear}
+      onEdition={selectEdition}
       onSeries={selectSeries}
       onWilaya={selectWilaya}
       onPath={selectPath}

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ExamSession } from "@prisma/client";
 import Link from "next/link";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
@@ -8,6 +9,10 @@ import { getRosterInitialData } from "@/lib/results";
 
 function safeDecode(value: string) {
   try { return decodeURIComponent(value); } catch { return value; }
+}
+
+function parseSession(value: string | undefined): ExamSession | undefined {
+  return value === "NORMAL" || value === "COMPLEMENTAIRE" ? value : undefined;
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ school: string }> }): Promise<Metadata> {
@@ -20,16 +25,17 @@ export default async function SchoolPage({
   searchParams
 }: {
   params: Promise<{ school: string }>;
-  searchParams: Promise<{ year?: string; wilaya?: string; series?: string }>;
+  searchParams: Promise<{ year?: string; session?: string; wilaya?: string; series?: string }>;
 }) {
   const { school } = await params;
   const sp = await searchParams;
   const name = safeDecode(school);
   const { dict, locale } = await getDictionary();
   const requestedYear = sp.year ? Number(sp.year) : undefined;
+  const requestedSession = parseSession(sp.session);
   const wilaya = sp.wilaya ?? "";
   const series = sp.series ?? "";
-  const initial = await getRosterInitialData("school", name, { year: requestedYear, wilaya, series });
+  const initial = await getRosterInitialData("school", name, { year: requestedYear, session: requestedSession, wilaya, series });
 
   return <>
     <SiteHeader dict={dict} locale={locale} />
@@ -42,6 +48,7 @@ export default async function SchoolPage({
           wilaya={wilaya}
           series={series}
           year={initial.year}
+          session={initial.session}
           yearLabel={(locale === "ar" ? initial.labelAr : initial.labelFr) || null}
           initialCandidates={initial.candidates}
           initialPageCount={initial.pageCount}

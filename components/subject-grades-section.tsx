@@ -9,19 +9,19 @@ import { fetchSubjectGrades, subjectDisplayName, type SubjectGradesState } from 
  * The idle/button state was removed per product requirement: subjects must be
  * visible immediately, directly below the candidate's main result information.
  */
-export function SubjectGradesSection({ candidateNumber, year, dict, locale }: { candidateNumber: string; year: number; dict: Dictionary; locale: Locale }) {
+export function SubjectGradesSection({ candidateNumber, year, session, dict, locale }: { candidateNumber: string; year: number; session?: string; dict: Dictionary; locale: Locale }) {
   const [state, setState] = useState<SubjectGradesState>({ status: "loading" });
 
   async function load() {
     setState({ status: "loading" });
-    const result = await fetchSubjectGrades({ year, candidateNumber });
+    const result = await fetchSubjectGrades({ year, session, candidateNumber });
     setState(result);
   }
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidateNumber, year]);
+  }, [candidateNumber, year, session]);
 
   // Complementary-session detail (S1/S2/retained) is self-describing: any row
   // carrying a non-null noteS1 came from the complementary import, never a

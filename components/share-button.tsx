@@ -15,6 +15,7 @@ export function ShareButton({
   average,
   decisionLabel,
   year,
+  session,
   badgeLabel
 }: {
   dict: Dictionary;
@@ -26,6 +27,7 @@ export function ShareButton({
   average: number;
   decisionLabel: string;
   year: number;
+  session?: string;
   badgeLabel?: string;
 }) {
   const [busy, setBusy] = useState(false);
@@ -41,7 +43,7 @@ export function ShareButton({
         { series: dict.series, wilaya: dict.wilaya, average: dict.average, year: dict.publishedYear }
       );
       const fileName = `mthbac-${candidateNumber}.png`;
-      const shareUrl = `${window.location.origin}/?number=${encodeURIComponent(candidateNumber)}&year=${year}`;
+      const shareUrl = `${window.location.origin}/?number=${encodeURIComponent(candidateNumber)}&year=${year}${session ? `&session=${session}` : ""}`;
       const shareText = `${dict.brand} — ${fullName} — ${decisionLabel}`;
 
       const file = new File([blob], fileName, { type: "image/png" });

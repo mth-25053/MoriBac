@@ -10,7 +10,7 @@ import { registerPdfFonts } from "@/lib/pdf/fonts";
 import { ResultDocument, type ResultPdfData, type ResultPdfRank } from "@/lib/pdf/result-document";
 import { isRateLimited } from "@/lib/rate-limit";
 import { findCandidateResult, getCandidateRanks, getPublishedYearCached } from "@/lib/results";
-import { candidateSearchSchema } from "@/lib/validation";
+import { candidateSearchSchema, examSessionSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -81,6 +81,8 @@ export async function GET(request: Request) {
   if (requestedYear !== undefined && (!Number.isInteger(requestedYear) || requestedYear < 2000 || requestedYear > 2100)) {
     return NextResponse.json({ error: "INVALID_YEAR" }, { status: 400 });
   }
+  const parsedSession = examSessionSchema.safeParse(url.searchParams.get("session") ?? undefined);
+  if (!parsedSession.success) return NextResponse.json({ error: "INVALID_SESSION" }, { status: 400 });
 
   const localeParam = url.searchParams.get("locale");
   const locale: Locale = localeParam === "fr" ? "fr" : "ar";
@@ -88,7 +90,7 @@ export async function GET(request: Request) {
 
   let data: ResultPdfData | null;
   try {
-    const year = await getPublishedYearCached(requestedYear);
+    const year = await getPublishedYearCached(requestedYear, parsedSession.data);
     if (!year) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
     data = await loadResultPdfData(year, parsedNumber.data.number, locale, dict);
   } catch (error) {

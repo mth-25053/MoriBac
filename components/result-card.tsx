@@ -43,7 +43,7 @@ function RankTile({ icon: Icon, label, rank, total, dict }: { icon: LucideIcon; 
   </div>;
 }
 
-export function ResultCard({ candidate, dict, locale, year }: { candidate: CandidateView; dict: Dictionary; locale: Locale; year: number }) {
+export function ResultCard({ candidate, dict, locale, year, session }: { candidate: CandidateView; dict: Dictionary; locale: Locale; year: number; session?: string }) {
   const details: Array<[LucideIcon, string, string | null]> = [
     [Award, dict.series, candidate.series],
     [School, dict.school, candidate.school],
@@ -92,7 +92,7 @@ export function ResultCard({ candidate, dict, locale, year }: { candidate: Candi
       </dl>
     </div>}
 
-    <SubjectGradesSection candidateNumber={candidate.candidateNumber} year={year} dict={dict} locale={locale} />
+    <SubjectGradesSection candidateNumber={candidate.candidateNumber} year={year} session={session} dict={dict} locale={locale} />
 
     <div className="relative z-[2] flex flex-wrap justify-center gap-2 border-t p-5" style={{ borderColor: "var(--line)" }}>
       <ShareButton
@@ -105,9 +105,10 @@ export function ResultCard({ candidate, dict, locale, year }: { candidate: Candi
         average={candidate.average}
         decisionLabel={decisionLabel}
         year={year}
+        session={session}
         badgeLabel={badges[0]?.label}
       />
-      <DownloadResultPdfButton dict={dict} locale={locale} candidateNumber={candidate.candidateNumber} year={year} />
+      <DownloadResultPdfButton dict={dict} locale={locale} candidateNumber={candidate.candidateNumber} year={year} session={session} />
     </div>
   </article>;
 }

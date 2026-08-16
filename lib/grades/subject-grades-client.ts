@@ -27,11 +27,12 @@ export type SubjectGradesState =
  * through untouched (URLSearchParams does not alter its digits/padding).
  */
 export async function fetchSubjectGrades(
-  input: { year: number; candidateNumber: string },
+  input: { year: number; session?: string; candidateNumber: string },
   fetchImpl: typeof fetch = fetch
 ): Promise<SubjectGradesState> {
   try {
     const query = new URLSearchParams({ year: String(input.year), number: input.candidateNumber });
+    if (input.session) query.set("session", input.session);
     const response = await fetchImpl(`/api/public/candidate-grades?${query.toString()}`);
     if (!response.ok) return { status: "error" };
     const data: unknown = await response.json().catch(() => null);

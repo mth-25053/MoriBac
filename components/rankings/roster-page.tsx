@@ -15,6 +15,7 @@ export function RosterPage({
   wilaya,
   series,
   year,
+  session,
   yearLabel,
   initialCandidates,
   initialPageCount,
@@ -26,6 +27,7 @@ export function RosterPage({
   wilaya: string;
   series: string;
   year: number;
+  session?: string;
   yearLabel?: string | null;
   initialCandidates: RankingCandidate[];
   initialPageCount: number;
@@ -43,6 +45,7 @@ export function RosterPage({
 
   function buildParams(pageNumber: number, nameFilter: string) {
     const params = new URLSearchParams({ year: String(year), sort: "highest", page: String(pageNumber) });
+    if (session) params.set("session", session);
     if (series) params.set("series", series);
     if (wilaya) params.set("wilaya", wilaya);
     if (kind === "school") params.set("school", name); else params.set("center", name);
@@ -88,7 +91,7 @@ export function RosterPage({
   }
 
   function openCandidate(candidateNumber: string) {
-    router.push(`/?number=${encodeURIComponent(candidateNumber)}&year=${year}`);
+    router.push(`/?number=${encodeURIComponent(candidateNumber)}&year=${year}${session ? `&session=${session}` : ""}`);
   }
 
   const contextLabel = kind === "school" ? dict.school : dict.center;

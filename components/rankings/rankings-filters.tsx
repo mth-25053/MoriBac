@@ -1,24 +1,25 @@
 import { RotateCcw } from "lucide-react";
 import type { Dictionary, Locale } from "@/lib/i18n";
+import { editionKey } from "@/lib/edition";
 import { ChipRow, ChipRowSkeleton } from "@/components/rankings/chip-row";
 import { FilterableList } from "@/components/rankings/filterable-list";
 import { WilayaSelect } from "@/components/rankings/wilaya-select";
 import type { FilterOptions } from "@/components/rankings/types";
 
-type YearOption = { year: number; isDefault: boolean; labelAr?: string | null; labelFr?: string | null };
+type YearOption = { year: number; session: "NORMAL" | "COMPLEMENTAIRE"; isDefault: boolean; labelAr?: string | null; labelFr?: string | null };
 
 export function RankingsFilters({
   dict,
   locale,
   years,
-  year,
+  edition,
   series,
   wilaya,
   path,
   options,
   optionsLoading,
   hasActiveFilters,
-  onYear,
+  onEdition,
   onSeries,
   onWilaya,
   onPath,
@@ -31,14 +32,14 @@ export function RankingsFilters({
   dict: Dictionary;
   locale: Locale;
   years: YearOption[];
-  year: number;
+  edition: string;
   series: string;
   wilaya: string;
   path: "school" | "center" | null;
   options: FilterOptions;
   optionsLoading: boolean;
   hasActiveFilters: boolean;
-  onYear: (value: number) => void;
+  onEdition: (value: string) => void;
   onSeries: (value: string) => void;
   onWilaya: (value: string) => void;
   onPath: (value: "school" | "center") => void;
@@ -52,8 +53,8 @@ export function RankingsFilters({
     <div className="flex flex-wrap items-center justify-between gap-3">
       {years.length > 1 && <label className="flex items-center gap-2">
         <span className="label !mb-0">{dict.publishedYear}</span>
-        <select className="field !w-auto !min-h-10 !py-1" value={year} onChange={(event) => onYear(Number(event.target.value))}>
-          {years.map((item) => <option key={item.year} value={item.year}>{(locale === "ar" ? item.labelAr : item.labelFr) || `BAC ${item.year}`}</option>)}
+        <select className="field !w-auto !min-h-10 !py-1" value={edition} onChange={(event) => onEdition(event.target.value)}>
+          {years.map((item) => <option key={editionKey(item.year, item.session)} value={editionKey(item.year, item.session)}>{(locale === "ar" ? item.labelAr : item.labelFr) || `BAC ${item.year}`}</option>)}
         </select>
       </label>}
       {hasActiveFilters && <button type="button" className="icon-button" onClick={onReset} aria-label={dict.resetFilters} title={dict.resetFilters}><RotateCcw size={17} /></button>}
